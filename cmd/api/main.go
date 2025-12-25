@@ -1,0 +1,79 @@
+package main
+
+import (
+	"log"
+	"net/http"
+	"os"
+
+	"github.com/Sapuran-Berperan/bamboo-mapper-backend/internal/config"
+	"github.com/Sapuran-Berperan/bamboo-mapper-backend/internal/database"
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/cors"
+	"github.com/joho/godotenv"
+)
+
+func main() {
+	// Load .env file if exists
+	if err := godotenv.Load(); err != nil {
+		log.Println("No .env file found, using environment variables")
+	}
+
+	// Load configuration
+	cfg := config.Load()
+
+	// Initialize database
+	db, err := database.Connect(cfg.DatabaseURL)
+	if err != nil {
+		log.Fatalf("Failed to connect to database: %v", err)
+	}
+	defer db.Close()
+
+	// Run migrations in dev environment
+	if cfg.Environment == "dev" {
+		log.Println("Running database migrations...")
+		if err := database.Migrate(cfg.DatabaseURL); err != nil {
+			log.Fatalf("Failed to run migrations: %v", err)
+		}
+		log.Println("Migrations completed successfully")
+	}
+
+	// Initialize router
+	r := chi.NewRouter()
+
+	// Middleware
+	r.Use(middleware.Logger)
+	r.Use(middleware.Recoverer)
+	r.Use(middleware.RequestID)
+	r.Use(cors.Handler(cors.Options{
+		AllowedOrigins:   []string{"*"},
+		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-Request-ID"},
+		ExposedHeaders:   []string{"Link"},
+		AllowCredentials: true,
+		MaxAge:           300,
+	}))
+
+	// Health check
+	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
+	})
+
+	// API routes
+	r.Route("/api/v1", func(r chi.Router) {
+		// TODO: Add route handlers
+	})
+
+	// Start server
+	port := cfg.Port
+	if port == "" {
+		port = "8080"
+	}
+
+	log.Printf("Server starting on port %s (env: %s)", port, cfg.Environment)
+	if err := http.ListenAndServe(":"+port, r); err != nil {
+		log.Fatalf("Server failed to start: %v", err)
+		os.Exit(1)
+	}
+}
