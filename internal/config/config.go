@@ -9,10 +9,19 @@ type Config struct {
 }
 
 func Load() *Config {
+	env := getEnv("ENVIRONMENT", "dev")
+
+	var dbURL string
+	if env == "dev" {
+		dbURL = getEnv("DATABASE_URL_DEV", "")
+	} else {
+		dbURL = getEnv("DATABASE_URL", "")
+	}
+
 	return &Config{
-		Environment: getEnv("ENVIRONMENT", "dev"),
+		Environment: env,
 		Port:        getEnv("PORT", "8080"),
-		DatabaseURL: getEnv("DATABASE_URL", ""),
+		DatabaseURL: dbURL,
 	}
 }
 
