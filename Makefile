@@ -1,4 +1,4 @@
-.PHONY: run build test clean migrate-up migrate-down sqlc
+.PHONY: run dev build test clean migrate-up migrate-down sqlc
 
 # Build the application
 build:
@@ -7,6 +7,10 @@ build:
 # Run the application
 run:
 	go run cmd/api/main.go
+
+# Run with hot reload
+dev:
+	air
 
 # Run tests
 test:
@@ -32,6 +36,7 @@ sqlc:
 deps:
 	go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
 	go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
+	go install github.com/air-verse/air@latest
 
 # Tidy go modules
 tidy:
