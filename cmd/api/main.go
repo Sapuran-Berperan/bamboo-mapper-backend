@@ -7,6 +7,8 @@ import (
 
 	"github.com/Sapuran-Berperan/bamboo-mapper-backend/internal/config"
 	"github.com/Sapuran-Berperan/bamboo-mapper-backend/internal/database"
+	"github.com/Sapuran-Berperan/bamboo-mapper-backend/internal/handler"
+	"github.com/Sapuran-Berperan/bamboo-mapper-backend/internal/repository"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
@@ -38,6 +40,10 @@ func main() {
 		log.Println("Migrations completed successfully")
 	}
 
+	// Initialize repository and handlers
+	queries := repository.New(db)
+	authHandler := handler.NewAuthHandler(queries)
+
 	// Initialize router
 	r := chi.NewRouter()
 
@@ -62,7 +68,9 @@ func main() {
 
 	// API routes
 	r.Route("/api/v1", func(r chi.Router) {
-		// TODO: Add route handlers
+		r.Route("/auth", func(r chi.Router) {
+			r.Post("/register", authHandler.Register)
+		})
 	})
 
 	// Start server
