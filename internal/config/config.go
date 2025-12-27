@@ -1,11 +1,17 @@
 package config
 
-import "os"
+import (
+	"os"
+	"time"
+)
 
 type Config struct {
-	Environment string
-	Port        string
-	DatabaseURL string
+	Environment        string
+	Port               string
+	DatabaseURL        string
+	JWTSecret          string
+	AccessTokenExpiry  time.Duration
+	RefreshTokenExpiry time.Duration
 }
 
 func Load() *Config {
@@ -18,10 +24,16 @@ func Load() *Config {
 		dbURL = getEnv("DATABASE_URL", "")
 	}
 
+	accessExpiry := parseDuration(getEnv("ACCESS_TOKEN_EXPIRY", "15m"), 15*time.Minute)
+	refreshExpiry := parseDuration(getEnv("REFRESH_TOKEN_EXPIRY", "168h"), 7*24*time.Hour)
+
 	return &Config{
-		Environment: env,
-		Port:        getEnv("PORT", "8080"),
-		DatabaseURL: dbURL,
+		Environment:        env,
+		Port:               getEnv("PORT", "8080"),
+		DatabaseURL:        dbURL,
+		JWTSecret:          getEnv("JWT_SECRET", ""),
+		AccessTokenExpiry:  accessExpiry,
+		RefreshTokenExpiry: refreshExpiry,
 	}
 }
 
@@ -30,4 +42,12 @@ func getEnv(key, defaultValue string) string {
 		return value
 	}
 	return defaultValue
+}
+
+func parseDuration(s string, defaultValue time.Duration) time.Duration {
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		return defaultValue
+	}
+	return d
 }
