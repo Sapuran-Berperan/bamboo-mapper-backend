@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/Sapuran-Berperan/bamboo-mapper-backend/internal/auth"
 	"github.com/Sapuran-Berperan/bamboo-mapper-backend/internal/config"
 	"github.com/Sapuran-Berperan/bamboo-mapper-backend/internal/database"
 	"github.com/Sapuran-Berperan/bamboo-mapper-backend/internal/handler"
@@ -40,9 +41,17 @@ func main() {
 		log.Println("Migrations completed successfully")
 	}
 
+	// Validate JWT secret is configured
+	if cfg.JWTSecret == "" {
+		log.Fatal("JWT_SECRET environment variable is required")
+	}
+
+	// Initialize JWT manager
+	jwtManager := auth.NewJWTManager(cfg)
+
 	// Initialize repository and handlers
 	queries := repository.New(db)
-	authHandler := handler.NewAuthHandler(queries)
+	authHandler := handler.NewAuthHandler(queries, jwtManager)
 
 	// Initialize router
 	r := chi.NewRouter()
@@ -70,6 +79,8 @@ func main() {
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Route("/auth", func(r chi.Router) {
 			r.Post("/register", authHandler.Register)
+			r.Post("/login", authHandler.Login)
+			r.Post("/refresh", authHandler.Refresh)
 		})
 	})
 
