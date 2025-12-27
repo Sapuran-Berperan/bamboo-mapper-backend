@@ -6,6 +6,7 @@ package repository
 
 import (
 	"database/sql"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -25,6 +26,17 @@ type Marker struct {
 	OwnerContact sql.NullString `json:"owner_contact"`
 	CreatedAt    sql.NullTime   `json:"created_at"`
 	UpdatedAt    sql.NullTime   `json:"updated_at"`
+}
+
+type RefreshToken struct {
+	ID        uuid.UUID      `json:"id"`
+	UserID    uuid.UUID      `json:"user_id"`
+	TokenHash string         `json:"token_hash"`
+	ExpiresAt time.Time      `json:"expires_at"`
+	RevokedAt sql.NullTime   `json:"revoked_at"`
+	CreatedAt sql.NullTime   `json:"created_at"`
+	UserAgent sql.NullString `json:"user_agent"`
+	IpAddress sql.NullString `json:"ip_address"`
 }
 
 type User struct {
