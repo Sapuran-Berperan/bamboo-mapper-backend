@@ -9,6 +9,7 @@ import (
 	"github.com/Sapuran-Berperan/bamboo-mapper-backend/internal/config"
 	"github.com/Sapuran-Berperan/bamboo-mapper-backend/internal/database"
 	"github.com/Sapuran-Berperan/bamboo-mapper-backend/internal/handler"
+	appMiddleware "github.com/Sapuran-Berperan/bamboo-mapper-backend/internal/middleware"
 	"github.com/Sapuran-Berperan/bamboo-mapper-backend/internal/repository"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -78,9 +79,16 @@ func main() {
 	// API routes
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Route("/auth", func(r chi.Router) {
+			// Public routes
 			r.Post("/register", authHandler.Register)
 			r.Post("/login", authHandler.Login)
 			r.Post("/refresh", authHandler.Refresh)
+
+			// Protected routes
+			r.Group(func(r chi.Router) {
+				r.Use(appMiddleware.JWTAuth(jwtManager))
+				r.Get("/me", authHandler.GetMe)
+			})
 		})
 	})
 

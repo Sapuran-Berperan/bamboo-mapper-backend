@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/Sapuran-Berperan/bamboo-mapper-backend/internal/auth"
+	"github.com/Sapuran-Berperan/bamboo-mapper-backend/internal/middleware"
 	"github.com/Sapuran-Berperan/bamboo-mapper-backend/internal/model"
 	"github.com/Sapuran-Berperan/bamboo-mapper-backend/internal/repository"
 	"github.com/lib/pq"
@@ -236,6 +237,38 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondSuccess(w, http.StatusOK, "Token refreshed successfully", response)
+}
+
+// GetMe returns the currently authenticated user
+func (h *AuthHandler) GetMe(w http.ResponseWriter, r *http.Request) {
+	// Get claims from context (set by JWT middleware)
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "Unauthorized", nil)
+		return
+	}
+
+	// Fetch fresh user data from database
+	user, err := h.queries.GetUserByID(r.Context(), claims.UserID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			respondError(w, http.StatusUnauthorized, "User not found", nil)
+			return
+		}
+		respondError(w, http.StatusInternalServerError, "Failed to fetch user", nil)
+		return
+	}
+
+	response := model.UserResponse{
+		ID:        user.ID,
+		Email:     user.Email,
+		Name:      user.Name,
+		Role:      user.Role.String,
+		CreatedAt: user.CreatedAt.Time,
+		UpdatedAt: user.UpdatedAt.Time,
+	}
+
+	respondSuccess(w, http.StatusOK, "User retrieved successfully", response)
 }
 
 // getClientIP extracts the client IP address from the request
