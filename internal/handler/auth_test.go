@@ -14,8 +14,10 @@ import (
 
 	"github.com/Sapuran-Berperan/bamboo-mapper-backend/internal/auth"
 	"github.com/Sapuran-Berperan/bamboo-mapper-backend/internal/config"
+	appMiddleware "github.com/Sapuran-Berperan/bamboo-mapper-backend/internal/middleware"
 	"github.com/Sapuran-Berperan/bamboo-mapper-backend/internal/model"
 	"github.com/Sapuran-Berperan/bamboo-mapper-backend/internal/repository"
+	"github.com/go-chi/chi/v5"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 )
@@ -617,5 +619,186 @@ func TestAuthHandler_Refresh_TokenRotation(t *testing.T) {
 
 	if refreshRR2.Code != http.StatusUnauthorized {
 		t.Errorf("expected status %d for reused token, got %d", http.StatusUnauthorized, refreshRR2.Code)
+	}
+}
+
+// createTestRouter creates a chi router with the GetMe endpoint protected by JWT middleware
+func createTestRouter(handler *AuthHandler) *chi.Mux {
+	r := chi.NewRouter()
+	r.Route("/api/v1/auth", func(r chi.Router) {
+		r.Group(func(r chi.Router) {
+			r.Use(appMiddleware.JWTAuth(testJWTManager))
+			r.Get("/me", handler.GetMe)
+		})
+	})
+	return r
+}
+
+// loginAndGetToken logs in and returns the access token
+func loginAndGetToken(t *testing.T, handler *AuthHandler) string {
+	loginBody := `{"email": "login@example.com", "password": "password123"}`
+	loginReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewBufferString(loginBody))
+	loginReq.Header.Set("Content-Type", "application/json")
+
+	loginRR := httptest.NewRecorder()
+	handler.Login(loginRR, loginReq)
+
+	if loginRR.Code != http.StatusOK {
+		t.Fatalf("login failed: %s", loginRR.Body.String())
+	}
+
+	var loginResponse Response
+	json.Unmarshal(loginRR.Body.Bytes(), &loginResponse)
+	loginData := loginResponse.Data.(map[string]interface{})
+	return loginData["access_token"].(string)
+}
+
+func TestAuthHandler_GetMe_Success(t *testing.T) {
+	cleanupUsers(t)
+
+	handler := NewAuthHandler(testQueries, testJWTManager)
+	createTestUser(t, handler)
+	accessToken := loginAndGetToken(t, handler)
+
+	router := createTestRouter(handler)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/me", nil)
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected status %d, got %d: %s", http.StatusOK, rr.Code, rr.Body.String())
+	}
+
+	var response Response
+	if err := json.Unmarshal(rr.Body.Bytes(), &response); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+
+	if !response.Meta.Success {
+		t.Error("expected success=true")
+	}
+
+	if response.Meta.Message != "User retrieved successfully" {
+		t.Errorf("unexpected message: %s", response.Meta.Message)
+	}
+
+	data, ok := response.Data.(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected data to be a map, got %T", response.Data)
+	}
+
+	if data["email"] != "login@example.com" {
+		t.Errorf("expected email 'login@example.com', got %v", data["email"])
+	}
+
+	if data["name"] != "Login User" {
+		t.Errorf("expected name 'Login User', got %v", data["name"])
+	}
+}
+
+func TestAuthHandler_GetMe_NoToken(t *testing.T) {
+	cleanupUsers(t)
+
+	handler := NewAuthHandler(testQueries, testJWTManager)
+	router := createTestRouter(handler)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/me", nil)
+	// No Authorization header
+
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Errorf("expected status %d, got %d: %s", http.StatusUnauthorized, rr.Code, rr.Body.String())
+	}
+
+	var response Response
+	if err := json.Unmarshal(rr.Body.Bytes(), &response); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+
+	if response.Meta.Success {
+		t.Error("expected success=false")
+	}
+
+	if response.Meta.Message != "Authorization header required" {
+		t.Errorf("unexpected message: %s", response.Meta.Message)
+	}
+}
+
+func TestAuthHandler_GetMe_InvalidToken(t *testing.T) {
+	cleanupUsers(t)
+
+	handler := NewAuthHandler(testQueries, testJWTManager)
+	router := createTestRouter(handler)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/me", nil)
+	req.Header.Set("Authorization", "Bearer invalid-token")
+
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Errorf("expected status %d, got %d: %s", http.StatusUnauthorized, rr.Code, rr.Body.String())
+	}
+
+	var response Response
+	if err := json.Unmarshal(rr.Body.Bytes(), &response); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+
+	if response.Meta.Success {
+		t.Error("expected success=false")
+	}
+
+	if response.Meta.Message != "Invalid token" {
+		t.Errorf("unexpected message: %s", response.Meta.Message)
+	}
+}
+
+func TestAuthHandler_GetMe_ExpiredToken(t *testing.T) {
+	cleanupUsers(t)
+
+	handler := NewAuthHandler(testQueries, testJWTManager)
+	createTestUser(t, handler)
+
+	// Create an expired JWT manager
+	expiredCfg := &config.Config{
+		JWTSecret:          "test-secret-key-for-testing-min-32-chars",
+		AccessTokenExpiry:  -1 * time.Hour, // Already expired
+		RefreshTokenExpiry: 7 * 24 * time.Hour,
+	}
+	expiredJWTManager := auth.NewJWTManager(expiredCfg)
+
+	// Get user to generate expired token
+	user, _ := testQueries.GetUserByEmail(context.Background(), "login@example.com")
+	expiredToken, _ := expiredJWTManager.GenerateAccessToken(user.ID, user.Email, user.Role.String)
+
+	router := createTestRouter(handler)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/me", nil)
+	req.Header.Set("Authorization", "Bearer "+expiredToken)
+
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Errorf("expected status %d, got %d: %s", http.StatusUnauthorized, rr.Code, rr.Body.String())
+	}
+
+	var response Response
+	if err := json.Unmarshal(rr.Body.Bytes(), &response); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+
+	if response.Meta.Success {
+		t.Error("expected success=false")
+	}
+
+	if response.Meta.Message != "Token has expired" {
+		t.Errorf("unexpected message: %s", response.Meta.Message)
 	}
 }
