@@ -11,6 +11,7 @@ import (
 	"github.com/Sapuran-Berperan/bamboo-mapper-backend/internal/handler"
 	appMiddleware "github.com/Sapuran-Berperan/bamboo-mapper-backend/internal/middleware"
 	"github.com/Sapuran-Berperan/bamboo-mapper-backend/internal/repository"
+	"github.com/Sapuran-Berperan/bamboo-mapper-backend/internal/storage"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
@@ -50,10 +51,25 @@ func main() {
 	// Initialize JWT manager
 	jwtManager := auth.NewJWTManager(cfg)
 
+	// Initialize Google Drive service (optional - only if credentials are configured)
+	var gdriveService *storage.GDriveService
+	if cfg.GDriveCredentialsPath != "" && cfg.GDriveTokenPath != "" && cfg.GDriveFolderID != "" {
+		var err error
+		gdriveService, err = storage.NewGDriveService(cfg.GDriveCredentialsPath, cfg.GDriveTokenPath, cfg.GDriveFolderID)
+		if err != nil {
+			log.Printf("Warning: Failed to initialize Google Drive service: %v", err)
+			log.Println("Image uploads will be disabled")
+		} else {
+			log.Println("Google Drive service initialized successfully")
+		}
+	} else {
+		log.Println("Google Drive credentials not configured, image uploads disabled")
+	}
+
 	// Initialize repository and handlers
 	queries := repository.New(db)
 	authHandler := handler.NewAuthHandler(queries, jwtManager)
-	markerHandler := handler.NewMarkerHandler(queries)
+	markerHandler := handler.NewMarkerHandler(queries, gdriveService)
 
 	// Initialize router
 	r := chi.NewRouter()
@@ -97,6 +113,7 @@ func main() {
 		r.Route("/markers", func(r chi.Router) {
 			r.Use(appMiddleware.JWTAuth(jwtManager))
 			r.Get("/", markerHandler.List)
+			r.Post("/", markerHandler.Create)
 			r.Get("/{id}", markerHandler.GetByID)
 		})
 	})

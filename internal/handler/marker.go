@@ -3,23 +3,32 @@ package handler
 import (
 	"database/sql"
 	"errors"
+	"log"
 	"net/http"
+	"strconv"
 
+	"github.com/Sapuran-Berperan/bamboo-mapper-backend/internal/middleware"
 	"github.com/Sapuran-Berperan/bamboo-mapper-backend/internal/model"
 	"github.com/Sapuran-Berperan/bamboo-mapper-backend/internal/repository"
+	"github.com/Sapuran-Berperan/bamboo-mapper-backend/internal/storage"
+	"github.com/Sapuran-Berperan/bamboo-mapper-backend/internal/util"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 )
 
+const maxUploadSize = 10 << 20 // 10 MB
+
 // MarkerHandler handles marker-related requests
 type MarkerHandler struct {
 	queries *repository.Queries
+	gdrive  *storage.GDriveService
 }
 
 // NewMarkerHandler creates a new MarkerHandler
-func NewMarkerHandler(queries *repository.Queries) *MarkerHandler {
+func NewMarkerHandler(queries *repository.Queries, gdrive *storage.GDriveService) *MarkerHandler {
 	return &MarkerHandler{
 		queries: queries,
+		gdrive:  gdrive,
 	}
 }
 
@@ -98,4 +107,150 @@ func (h *MarkerHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondSuccess(w, http.StatusOK, "Marker retrieved successfully", response)
+}
+
+// Create handles creating a new marker with optional image upload
+func (h *MarkerHandler) Create(w http.ResponseWriter, r *http.Request) {
+	// Get creator ID from JWT context
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "Unauthorized", nil)
+		return
+	}
+
+	// Parse multipart form with size limit
+	if err := r.ParseMultipartForm(maxUploadSize); err != nil {
+		respondError(w, http.StatusBadRequest, "Failed to parse form data", nil)
+		return
+	}
+
+	// Extract form fields
+	req := model.CreateMarkerRequest{
+		Name:      r.FormValue("name"),
+		Latitude:  r.FormValue("latitude"),
+		Longitude: r.FormValue("longitude"),
+	}
+
+	// Handle optional string fields
+	if desc := r.FormValue("description"); desc != "" {
+		req.Description = &desc
+	}
+	if strain := r.FormValue("strain"); strain != "" {
+		req.Strain = &strain
+	}
+	if ownerName := r.FormValue("owner_name"); ownerName != "" {
+		req.OwnerName = &ownerName
+	}
+	if ownerContact := r.FormValue("owner_contact"); ownerContact != "" {
+		req.OwnerContact = &ownerContact
+	}
+
+	// Handle optional quantity field
+	if qtyStr := r.FormValue("quantity"); qtyStr != "" {
+		qty, err := strconv.ParseInt(qtyStr, 10, 32)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "Validation failed", map[string]string{
+				"quantity": "Invalid quantity format",
+			})
+			return
+		}
+		qty32 := int32(qty)
+		req.Quantity = &qty32
+	}
+
+	// Validate request
+	if validationErrors := req.Validate(); len(validationErrors) > 0 {
+		respondError(w, http.StatusBadRequest, "Validation failed", validationErrors)
+		return
+	}
+
+	// Handle image upload (optional)
+	var imageURL sql.NullString
+	file, header, err := r.FormFile("image")
+	if err == nil {
+		defer file.Close()
+
+		// Upload to Google Drive
+		if h.gdrive != nil {
+			url, uploadErr := h.gdrive.UploadFile(file, header.Filename, header.Header.Get("Content-Type"))
+			if uploadErr != nil {
+				log.Printf("Failed to upload image to Google Drive: %v", uploadErr)
+				respondError(w, http.StatusInternalServerError, "Failed to upload image", nil)
+				return
+			}
+			imageURL = sql.NullString{String: url, Valid: true}
+		} else {
+			log.Println("Image provided but Google Drive service not configured")
+		}
+	}
+
+	// Generate short code
+	shortCode := util.GenerateShortCode()
+
+	// Create marker in database
+	marker, err := h.queries.CreateMarker(r.Context(), repository.CreateMarkerParams{
+		ShortCode:    shortCode,
+		CreatorID:    claims.UserID,
+		Name:         req.Name,
+		Description:  toNullString(req.Description),
+		Strain:       toNullString(req.Strain),
+		Quantity:     toNullInt32(req.Quantity),
+		Latitude:     req.Latitude,
+		Longitude:    req.Longitude,
+		ImageUrl:     imageURL,
+		OwnerName:    toNullString(req.OwnerName),
+		OwnerContact: toNullString(req.OwnerContact),
+	})
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to create marker", nil)
+		return
+	}
+
+	// Build response
+	response := model.MarkerResponse{
+		ID:        marker.ID,
+		ShortCode: marker.ShortCode,
+		CreatorID: marker.CreatorID,
+		Name:      marker.Name,
+		Latitude:  marker.Latitude,
+		Longitude: marker.Longitude,
+		CreatedAt: marker.CreatedAt.Time,
+		UpdatedAt: marker.UpdatedAt.Time,
+	}
+
+	if marker.Description.Valid {
+		response.Description = &marker.Description.String
+	}
+	if marker.Strain.Valid {
+		response.Strain = &marker.Strain.String
+	}
+	if marker.Quantity.Valid {
+		response.Quantity = &marker.Quantity.Int32
+	}
+	if marker.ImageUrl.Valid {
+		response.ImageURL = &marker.ImageUrl.String
+	}
+	if marker.OwnerName.Valid {
+		response.OwnerName = &marker.OwnerName.String
+	}
+	if marker.OwnerContact.Valid {
+		response.OwnerContact = &marker.OwnerContact.String
+	}
+
+	respondSuccess(w, http.StatusCreated, "Marker created successfully", response)
+}
+
+// Helper functions for nullable types
+func toNullString(s *string) sql.NullString {
+	if s == nil {
+		return sql.NullString{Valid: false}
+	}
+	return sql.NullString{String: *s, Valid: true}
+}
+
+func toNullInt32(i *int32) sql.NullInt32 {
+	if i == nil {
+		return sql.NullInt32{Valid: false}
+	}
+	return sql.NullInt32{Int32: *i, Valid: true}
 }
