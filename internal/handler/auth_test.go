@@ -802,3 +802,172 @@ func TestAuthHandler_GetMe_ExpiredToken(t *testing.T) {
 		t.Errorf("unexpected message: %s", response.Meta.Message)
 	}
 }
+
+// createTestRouterWithLogout creates a chi router with GetMe and Logout endpoints
+func createTestRouterWithLogout(handler *AuthHandler) *chi.Mux {
+	r := chi.NewRouter()
+	r.Route("/api/v1/auth", func(r chi.Router) {
+		r.Group(func(r chi.Router) {
+			r.Use(appMiddleware.JWTAuth(testJWTManager))
+			r.Get("/me", handler.GetMe)
+			r.Post("/logout", handler.Logout)
+		})
+	})
+	return r
+}
+
+func TestAuthHandler_Logout_Success(t *testing.T) {
+	cleanupUsers(t)
+
+	handler := NewAuthHandler(testQueries, testJWTManager)
+	createTestUser(t, handler)
+
+	// Login to get tokens
+	loginBody := `{"email": "login@example.com", "password": "password123"}`
+	loginReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewBufferString(loginBody))
+	loginReq.Header.Set("Content-Type", "application/json")
+
+	loginRR := httptest.NewRecorder()
+	handler.Login(loginRR, loginReq)
+
+	var loginResponse Response
+	json.Unmarshal(loginRR.Body.Bytes(), &loginResponse)
+	loginData := loginResponse.Data.(map[string]interface{})
+	accessToken := loginData["access_token"].(string)
+	refreshToken := loginData["refresh_token"].(string)
+
+	// Call logout endpoint
+	router := createTestRouterWithLogout(handler)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/logout", nil)
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected status %d, got %d: %s", http.StatusOK, rr.Code, rr.Body.String())
+	}
+
+	var response Response
+	if err := json.Unmarshal(rr.Body.Bytes(), &response); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+
+	if !response.Meta.Success {
+		t.Error("expected success=true")
+	}
+
+	if response.Meta.Message != "Logged out successfully" {
+		t.Errorf("unexpected message: %s", response.Meta.Message)
+	}
+
+	// Verify refresh token is now invalid
+	refreshBody := `{"refresh_token": "` + refreshToken + `"}`
+	refreshReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/refresh", bytes.NewBufferString(refreshBody))
+	refreshReq.Header.Set("Content-Type", "application/json")
+
+	refreshRR := httptest.NewRecorder()
+	handler.Refresh(refreshRR, refreshReq)
+
+	if refreshRR.Code != http.StatusUnauthorized {
+		t.Errorf("expected refresh to fail after logout, got status %d", refreshRR.Code)
+	}
+}
+
+func TestAuthHandler_Logout_NoToken(t *testing.T) {
+	cleanupUsers(t)
+
+	handler := NewAuthHandler(testQueries, testJWTManager)
+	router := createTestRouterWithLogout(handler)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/logout", nil)
+	// No Authorization header
+
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Errorf("expected status %d, got %d: %s", http.StatusUnauthorized, rr.Code, rr.Body.String())
+	}
+
+	var response Response
+	if err := json.Unmarshal(rr.Body.Bytes(), &response); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+
+	if response.Meta.Success {
+		t.Error("expected success=false")
+	}
+
+	if response.Meta.Message != "Authorization header required" {
+		t.Errorf("unexpected message: %s", response.Meta.Message)
+	}
+}
+
+func TestAuthHandler_Logout_RevokesAllSessions(t *testing.T) {
+	cleanupUsers(t)
+
+	handler := NewAuthHandler(testQueries, testJWTManager)
+	createTestUser(t, handler)
+
+	// Login twice to create two sessions
+	loginBody := `{"email": "login@example.com", "password": "password123"}`
+
+	// First login
+	loginReq1 := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewBufferString(loginBody))
+	loginReq1.Header.Set("Content-Type", "application/json")
+	loginRR1 := httptest.NewRecorder()
+	handler.Login(loginRR1, loginReq1)
+
+	var loginResponse1 Response
+	json.Unmarshal(loginRR1.Body.Bytes(), &loginResponse1)
+	loginData1 := loginResponse1.Data.(map[string]interface{})
+	accessToken := loginData1["access_token"].(string)
+	refreshToken1 := loginData1["refresh_token"].(string)
+
+	// Second login
+	loginReq2 := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewBufferString(loginBody))
+	loginReq2.Header.Set("Content-Type", "application/json")
+	loginRR2 := httptest.NewRecorder()
+	handler.Login(loginRR2, loginReq2)
+
+	var loginResponse2 Response
+	json.Unmarshal(loginRR2.Body.Bytes(), &loginResponse2)
+	loginData2 := loginResponse2.Data.(map[string]interface{})
+	refreshToken2 := loginData2["refresh_token"].(string)
+
+	// Logout using first session's access token
+	router := createTestRouterWithLogout(handler)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/logout", nil)
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("logout failed: %s", rr.Body.String())
+	}
+
+	// Verify BOTH refresh tokens are now invalid
+	refreshBody1 := `{"refresh_token": "` + refreshToken1 + `"}`
+	refreshReq1 := httptest.NewRequest(http.MethodPost, "/api/v1/auth/refresh", bytes.NewBufferString(refreshBody1))
+	refreshReq1.Header.Set("Content-Type", "application/json")
+	refreshRR1 := httptest.NewRecorder()
+	handler.Refresh(refreshRR1, refreshReq1)
+
+	if refreshRR1.Code != http.StatusUnauthorized {
+		t.Errorf("expected first refresh token to be revoked, got status %d", refreshRR1.Code)
+	}
+
+	refreshBody2 := `{"refresh_token": "` + refreshToken2 + `"}`
+	refreshReq2 := httptest.NewRequest(http.MethodPost, "/api/v1/auth/refresh", bytes.NewBufferString(refreshBody2))
+	refreshReq2.Header.Set("Content-Type", "application/json")
+	refreshRR2 := httptest.NewRecorder()
+	handler.Refresh(refreshRR2, refreshReq2)
+
+	if refreshRR2.Code != http.StatusUnauthorized {
+		t.Errorf("expected second refresh token to be revoked, got status %d", refreshRR2.Code)
+	}
+}
