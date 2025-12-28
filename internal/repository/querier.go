@@ -11,6 +11,8 @@ import (
 )
 
 type Querier interface {
+	// Creates a new marker and returns the created record
+	CreateMarker(ctx context.Context, arg CreateMarkerParams) (Marker, error)
 	CreateRefreshToken(ctx context.Context, arg CreateRefreshTokenParams) (CreateRefreshTokenRow, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (CreateUserRow, error)
 	DeleteExpiredRefreshTokens(ctx context.Context) error

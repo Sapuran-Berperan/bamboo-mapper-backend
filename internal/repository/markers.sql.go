@@ -7,9 +7,67 @@ package repository
 
 import (
 	"context"
+	"database/sql"
 
 	"github.com/google/uuid"
 )
+
+const createMarker = `-- name: CreateMarker :one
+INSERT INTO markers (
+    short_code, creator_id, name, description, strain,
+    quantity, latitude, longitude, image_url, owner_name, owner_contact
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+RETURNING id, short_code, creator_id, name, description, strain, quantity, latitude, longitude, image_url, owner_name, owner_contact, created_at, updated_at
+`
+
+type CreateMarkerParams struct {
+	ShortCode    string         `json:"short_code"`
+	CreatorID    uuid.UUID      `json:"creator_id"`
+	Name         string         `json:"name"`
+	Description  sql.NullString `json:"description"`
+	Strain       sql.NullString `json:"strain"`
+	Quantity     sql.NullInt32  `json:"quantity"`
+	Latitude     string         `json:"latitude"`
+	Longitude    string         `json:"longitude"`
+	ImageUrl     sql.NullString `json:"image_url"`
+	OwnerName    sql.NullString `json:"owner_name"`
+	OwnerContact sql.NullString `json:"owner_contact"`
+}
+
+// Creates a new marker and returns the created record
+func (q *Queries) CreateMarker(ctx context.Context, arg CreateMarkerParams) (Marker, error) {
+	row := q.db.QueryRowContext(ctx, createMarker,
+		arg.ShortCode,
+		arg.CreatorID,
+		arg.Name,
+		arg.Description,
+		arg.Strain,
+		arg.Quantity,
+		arg.Latitude,
+		arg.Longitude,
+		arg.ImageUrl,
+		arg.OwnerName,
+		arg.OwnerContact,
+	)
+	var i Marker
+	err := row.Scan(
+		&i.ID,
+		&i.ShortCode,
+		&i.CreatorID,
+		&i.Name,
+		&i.Description,
+		&i.Strain,
+		&i.Quantity,
+		&i.Latitude,
+		&i.Longitude,
+		&i.ImageUrl,
+		&i.OwnerName,
+		&i.OwnerContact,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
 
 const getMarkerByID = `-- name: GetMarkerByID :one
 SELECT id, short_code, creator_id, name, description, strain, quantity, latitude, longitude, image_url, owner_name, owner_contact, created_at, updated_at FROM markers WHERE id = $1
