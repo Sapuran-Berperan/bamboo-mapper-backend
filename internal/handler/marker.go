@@ -164,15 +164,22 @@ func (h *MarkerHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Generate short code first (needed for image filename)
+	shortCode := util.GenerateShortCode()
+
 	// Handle image upload (optional)
 	var imageURL sql.NullString
 	file, header, err := r.FormFile("image")
 	if err == nil {
 		defer file.Close()
 
-		// Upload to Google Drive
+		// Upload to Google Drive with short_code as filename
 		if h.gdrive != nil {
-			url, uploadErr := h.gdrive.UploadFile(file, header.Filename, header.Header.Get("Content-Type"))
+			// Get file extension from original filename
+			ext := getFileExtension(header.Filename)
+			filename := shortCode + ext
+
+			url, uploadErr := h.gdrive.UploadFile(file, filename, header.Header.Get("Content-Type"))
 			if uploadErr != nil {
 				log.Printf("Failed to upload image to Google Drive: %v", uploadErr)
 				respondError(w, http.StatusInternalServerError, "Failed to upload image", nil)
@@ -183,9 +190,6 @@ func (h *MarkerHandler) Create(w http.ResponseWriter, r *http.Request) {
 			log.Println("Image provided but Google Drive service not configured")
 		}
 	}
-
-	// Generate short code
-	shortCode := util.GenerateShortCode()
 
 	// Create marker in database
 	marker, err := h.queries.CreateMarker(r.Context(), repository.CreateMarkerParams{
@@ -253,4 +257,14 @@ func toNullInt32(i *int32) sql.NullInt32 {
 		return sql.NullInt32{Valid: false}
 	}
 	return sql.NullInt32{Int32: *i, Valid: true}
+}
+
+// getFileExtension extracts the file extension from a filename (e.g., ".jpg")
+func getFileExtension(filename string) string {
+	for i := len(filename) - 1; i >= 0; i-- {
+		if filename[i] == '.' {
+			return filename[i:]
+		}
+	}
+	return ""
 }
