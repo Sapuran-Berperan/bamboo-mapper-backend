@@ -2,9 +2,13 @@ package storage
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/google"
 	"google.golang.org/api/drive/v3"
 	"google.golang.org/api/option"
 )
@@ -15,12 +19,36 @@ type GDriveService struct {
 	folderID string
 }
 
-// NewGDriveService creates a new Google Drive service using service account credentials
-func NewGDriveService(credentialsPath, folderID string) (*GDriveService, error) {
+// NewGDriveService creates a new Google Drive service using OAuth2 credentials
+// credentialsPath: path to OAuth2 client credentials JSON (from Google Cloud Console)
+// tokenPath: path to the saved OAuth2 token JSON (created by running scripts/gdrive_auth.go)
+// folderID: the Google Drive folder ID to upload files to
+func NewGDriveService(credentialsPath, tokenPath, folderID string) (*GDriveService, error) {
 	ctx := context.Background()
 
-	// Use WithAuthCredentialsFile for better security validation
-	service, err := drive.NewService(ctx, option.WithAuthCredentialsFile(option.ServiceAccount, credentialsPath))
+	// Read OAuth2 client credentials
+	credBytes, err := os.ReadFile(credentialsPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read credentials file: %w", err)
+	}
+
+	// Parse credentials and create OAuth2 config
+	config, err := google.ConfigFromJSON(credBytes, drive.DriveFileScope)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse credentials: %w", err)
+	}
+
+	// Read saved token
+	token, err := tokenFromFile(tokenPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read token (run 'go run scripts/gdrive_auth.go' first): %w", err)
+	}
+
+	// Create OAuth2 client with automatic token refresh
+	client := config.Client(ctx, token)
+
+	// Create Drive service
+	service, err := drive.NewService(ctx, option.WithHTTPClient(client))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create drive service: %w", err)
 	}
@@ -29,6 +57,19 @@ func NewGDriveService(credentialsPath, folderID string) (*GDriveService, error) 
 		service:  service,
 		folderID: folderID,
 	}, nil
+}
+
+// tokenFromFile reads a token from a file
+func tokenFromFile(file string) (*oauth2.Token, error) {
+	f, err := os.Open(file)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	tok := &oauth2.Token{}
+	err = json.NewDecoder(f).Decode(tok)
+	return tok, err
 }
 
 // UploadFile uploads a file to Google Drive and returns the shareable URL
