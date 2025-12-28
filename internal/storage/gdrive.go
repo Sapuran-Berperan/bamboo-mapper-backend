@@ -44,11 +44,25 @@ func NewGDriveService(credentialsPath, tokenPath, folderID string) (*GDriveServi
 		return nil, fmt.Errorf("failed to read token (run 'go run scripts/gdrive_auth.go' first): %w", err)
 	}
 
-	// Create OAuth2 client with automatic token refresh
-	client := config.Client(ctx, token)
+	// Create token source that auto-refreshes and saves the new token
+	tokenSource := config.TokenSource(ctx, token)
 
-	// Create Drive service
-	service, err := drive.NewService(ctx, option.WithHTTPClient(client))
+	// Get a fresh token (this will refresh if expired)
+	newToken, err := tokenSource.Token()
+	if err != nil {
+		return nil, fmt.Errorf("failed to refresh token: %w", err)
+	}
+
+	// Save the refreshed token if it changed
+	if newToken.AccessToken != token.AccessToken {
+		if err := saveToken(tokenPath, newToken); err != nil {
+			// Log but don't fail - the service can still work
+			fmt.Printf("Warning: failed to save refreshed token: %v\n", err)
+		}
+	}
+
+	// Create Drive service with the token source
+	service, err := drive.NewService(ctx, option.WithTokenSource(tokenSource))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create drive service: %w", err)
 	}
@@ -70,6 +84,16 @@ func tokenFromFile(file string) (*oauth2.Token, error) {
 	tok := &oauth2.Token{}
 	err = json.NewDecoder(f).Decode(tok)
 	return tok, err
+}
+
+// saveToken saves a token to a file
+func saveToken(path string, token *oauth2.Token) error {
+	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return json.NewEncoder(f).Encode(token)
 }
 
 // UploadFile uploads a file to Google Drive and returns the shareable URL
