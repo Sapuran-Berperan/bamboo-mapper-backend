@@ -1,17 +1,22 @@
 package handler
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/Sapuran-Berperan/bamboo-mapper-backend/internal/auth"
+	appMiddleware "github.com/Sapuran-Berperan/bamboo-mapper-backend/internal/middleware"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
 )
 
-// Note: This test file uses the shared testDB and testQueries from auth_test.go
+// Note: This test file uses the shared testDB, testQueries, and testJWTManager from auth_test.go
 // which are initialized in TestMain
 
 func cleanupMarkers(t *testing.T) {
@@ -57,7 +62,7 @@ func TestMarkerHandler_List_Success(t *testing.T) {
 	userID := createTestUserForMarker(t)
 	createTestMarker(t, userID)
 
-	handler := NewMarkerHandler(testQueries)
+	handler := NewMarkerHandler(testQueries, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/markers", nil)
 	rr := httptest.NewRecorder()
@@ -103,7 +108,7 @@ func TestMarkerHandler_List_Empty(t *testing.T) {
 	cleanupMarkers(t)
 	cleanupUsers(t)
 
-	handler := NewMarkerHandler(testQueries)
+	handler := NewMarkerHandler(testQueries, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/markers", nil)
 	rr := httptest.NewRecorder()
@@ -140,7 +145,7 @@ func TestMarkerHandler_GetByID_Success(t *testing.T) {
 	userID := createTestUserForMarker(t)
 	markerID := createTestMarker(t, userID)
 
-	handler := NewMarkerHandler(testQueries)
+	handler := NewMarkerHandler(testQueries, nil)
 
 	// Create chi context with URL param
 	r := chi.NewRouter()
@@ -188,7 +193,7 @@ func TestMarkerHandler_GetByID_NotFound(t *testing.T) {
 	cleanupMarkers(t)
 	cleanupUsers(t)
 
-	handler := NewMarkerHandler(testQueries)
+	handler := NewMarkerHandler(testQueries, nil)
 
 	randomID := uuid.New()
 
@@ -219,7 +224,7 @@ func TestMarkerHandler_GetByID_NotFound(t *testing.T) {
 }
 
 func TestMarkerHandler_GetByID_InvalidID(t *testing.T) {
-	handler := NewMarkerHandler(testQueries)
+	handler := NewMarkerHandler(testQueries, nil)
 
 	r := chi.NewRouter()
 	r.Get("/markers/{id}", handler.GetByID)
@@ -254,7 +259,7 @@ func TestMarkerHandler_List_LightweightFields(t *testing.T) {
 	userID := createTestUserForMarker(t)
 	createTestMarker(t, userID)
 
-	handler := NewMarkerHandler(testQueries)
+	handler := NewMarkerHandler(testQueries, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/markers", nil)
 	rr := httptest.NewRecorder()
@@ -281,5 +286,263 @@ func TestMarkerHandler_List_LightweightFields(t *testing.T) {
 		if _, exists := marker[field]; exists {
 			t.Errorf("field %s should not exist in lightweight response", field)
 		}
+	}
+}
+
+// Helper to create multipart form request for marker creation
+func createMarkerFormRequest(t *testing.T, fields map[string]string) *http.Request {
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+
+	for key, value := range fields {
+		if err := writer.WriteField(key, value); err != nil {
+			t.Fatalf("failed to write field %s: %v", key, err)
+		}
+	}
+
+	if err := writer.Close(); err != nil {
+		t.Fatalf("failed to close multipart writer: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/markers", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	return req
+}
+
+// Helper to add JWT claims to request context
+func addClaimsToContext(req *http.Request, userID uuid.UUID) *http.Request {
+	claims := &auth.Claims{
+		UserID: userID,
+		Email:  "test@example.com",
+		Role:   "user",
+	}
+	ctx := context.WithValue(req.Context(), appMiddleware.ClaimsKey, claims)
+	return req.WithContext(ctx)
+}
+
+func TestMarkerHandler_Create_Success(t *testing.T) {
+	cleanupMarkers(t)
+	cleanupUsers(t)
+
+	// Create test user
+	userID := createTestUserForMarker(t)
+
+	handler := NewMarkerHandler(testQueries, nil)
+
+	// Create form data with required fields
+	fields := map[string]string{
+		"name":        "New Bamboo Location",
+		"latitude":    "-7.25000000",
+		"longitude":   "110.45000000",
+		"description": "A beautiful bamboo grove",
+		"strain":      "Dendrocalamus asper",
+		"quantity":    "100",
+		"owner_name":  "John Doe",
+	}
+
+	req := createMarkerFormRequest(t, fields)
+	req = addClaimsToContext(req, userID)
+	rr := httptest.NewRecorder()
+
+	handler.Create(rr, req)
+
+	if rr.Code != http.StatusCreated {
+		t.Errorf("expected status %d, got %d: %s", http.StatusCreated, rr.Code, rr.Body.String())
+	}
+
+	var response Response
+	if err := json.Unmarshal(rr.Body.Bytes(), &response); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+
+	if !response.Meta.Success {
+		t.Error("expected success=true")
+	}
+
+	if response.Meta.Message != "Marker created successfully" {
+		t.Errorf("unexpected message: %s", response.Meta.Message)
+	}
+
+	data, ok := response.Data.(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected data to be a map, got %T", response.Data)
+	}
+
+	// Verify returned data
+	if data["name"] != "New Bamboo Location" {
+		t.Errorf("expected name 'New Bamboo Location', got %v", data["name"])
+	}
+	if data["latitude"] != "-7.25000000" {
+		t.Errorf("expected latitude '-7.25000000', got %v", data["latitude"])
+	}
+	if data["longitude"] != "110.45000000" {
+		t.Errorf("expected longitude '110.45000000', got %v", data["longitude"])
+	}
+
+	// Verify short_code was generated (8 chars)
+	shortCode, ok := data["short_code"].(string)
+	if !ok || len(shortCode) != 8 {
+		t.Errorf("expected short_code to be 8 characters, got %v", data["short_code"])
+	}
+
+	// Verify optional fields
+	if data["description"] != "A beautiful bamboo grove" {
+		t.Errorf("expected description 'A beautiful bamboo grove', got %v", data["description"])
+	}
+	if data["strain"] != "Dendrocalamus asper" {
+		t.Errorf("expected strain 'Dendrocalamus asper', got %v", data["strain"])
+	}
+}
+
+func TestMarkerHandler_Create_MinimalFields(t *testing.T) {
+	cleanupMarkers(t)
+	cleanupUsers(t)
+
+	userID := createTestUserForMarker(t)
+
+	handler := NewMarkerHandler(testQueries, nil)
+
+	// Create form data with only required fields
+	fields := map[string]string{
+		"name":      "Minimal Bamboo",
+		"latitude":  "-7.30000000",
+		"longitude": "110.50000000",
+	}
+
+	req := createMarkerFormRequest(t, fields)
+	req = addClaimsToContext(req, userID)
+	rr := httptest.NewRecorder()
+
+	handler.Create(rr, req)
+
+	if rr.Code != http.StatusCreated {
+		t.Errorf("expected status %d, got %d: %s", http.StatusCreated, rr.Code, rr.Body.String())
+	}
+
+	var response Response
+	if err := json.Unmarshal(rr.Body.Bytes(), &response); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+
+	if !response.Meta.Success {
+		t.Error("expected success=true")
+	}
+
+	data := response.Data.(map[string]interface{})
+	if data["name"] != "Minimal Bamboo" {
+		t.Errorf("expected name 'Minimal Bamboo', got %v", data["name"])
+	}
+
+	// Optional fields should be nil
+	if data["description"] != nil {
+		t.Errorf("expected description to be nil, got %v", data["description"])
+	}
+	if data["strain"] != nil {
+		t.Errorf("expected strain to be nil, got %v", data["strain"])
+	}
+}
+
+func TestMarkerHandler_Create_ValidationErrors(t *testing.T) {
+	cleanupMarkers(t)
+	cleanupUsers(t)
+
+	userID := createTestUserForMarker(t)
+
+	handler := NewMarkerHandler(testQueries, nil)
+
+	// Missing required fields
+	fields := map[string]string{
+		"description": "Missing name, latitude, longitude",
+	}
+
+	req := createMarkerFormRequest(t, fields)
+	req = addClaimsToContext(req, userID)
+	rr := httptest.NewRecorder()
+
+	handler.Create(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("expected status %d, got %d: %s", http.StatusBadRequest, rr.Code, rr.Body.String())
+	}
+
+	var response Response
+	if err := json.Unmarshal(rr.Body.Bytes(), &response); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+
+	if response.Meta.Success {
+		t.Error("expected success=false")
+	}
+
+	if response.Meta.Message != "Validation failed" {
+		t.Errorf("unexpected message: %s", response.Meta.Message)
+	}
+
+	// Check validation errors in details
+	if response.Meta.Details == nil {
+		t.Fatal("expected details to be present")
+	}
+
+	if _, exists := response.Meta.Details["name"]; !exists {
+		t.Error("expected validation error for 'name'")
+	}
+	if _, exists := response.Meta.Details["latitude"]; !exists {
+		t.Error("expected validation error for 'latitude'")
+	}
+	if _, exists := response.Meta.Details["longitude"]; !exists {
+		t.Error("expected validation error for 'longitude'")
+	}
+}
+
+func TestMarkerHandler_Create_InvalidQuantity(t *testing.T) {
+	cleanupMarkers(t)
+	cleanupUsers(t)
+
+	userID := createTestUserForMarker(t)
+
+	handler := NewMarkerHandler(testQueries, nil)
+
+	fields := map[string]string{
+		"name":      "Test Bamboo",
+		"latitude":  "-7.30000000",
+		"longitude": "110.50000000",
+		"quantity":  "not-a-number",
+	}
+
+	req := createMarkerFormRequest(t, fields)
+	req = addClaimsToContext(req, userID)
+	rr := httptest.NewRecorder()
+
+	handler.Create(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("expected status %d, got %d: %s", http.StatusBadRequest, rr.Code, rr.Body.String())
+	}
+
+	var response Response
+	json.Unmarshal(rr.Body.Bytes(), &response)
+
+	if response.Meta.Success {
+		t.Error("expected success=false")
+	}
+}
+
+func TestMarkerHandler_Create_Unauthorized(t *testing.T) {
+	handler := NewMarkerHandler(testQueries, nil)
+
+	fields := map[string]string{
+		"name":      "Test Bamboo",
+		"latitude":  "-7.30000000",
+		"longitude": "110.50000000",
+	}
+
+	req := createMarkerFormRequest(t, fields)
+	// Note: NOT adding claims to context
+	rr := httptest.NewRecorder()
+
+	handler.Create(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Errorf("expected status %d, got %d: %s", http.StatusUnauthorized, rr.Code, rr.Body.String())
 	}
 }
