@@ -14,9 +14,13 @@ type Querier interface {
 	CreateRefreshToken(ctx context.Context, arg CreateRefreshTokenParams) (CreateRefreshTokenRow, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (CreateUserRow, error)
 	DeleteExpiredRefreshTokens(ctx context.Context) error
+	// Returns full marker details by ID
+	GetMarkerByID(ctx context.Context, id uuid.UUID) (Marker, error)
 	GetRefreshTokenByHash(ctx context.Context, tokenHash string) (RefreshToken, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (GetUserByIDRow, error)
+	// Returns lightweight marker data for map display
+	ListMarkersLightweight(ctx context.Context) ([]ListMarkersLightweightRow, error)
 	RevokeAllUserRefreshTokens(ctx context.Context, userID uuid.UUID) error
 	RevokeRefreshToken(ctx context.Context, tokenHash string) error
 }
