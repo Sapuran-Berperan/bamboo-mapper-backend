@@ -239,6 +239,24 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	respondSuccess(w, http.StatusOK, "Token refreshed successfully", response)
 }
 
+// Logout revokes all refresh tokens for the authenticated user
+func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	// Get claims from context (set by JWT middleware)
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "Unauthorized", nil)
+		return
+	}
+
+	// Revoke all refresh tokens for this user
+	if err := h.queries.RevokeAllUserRefreshTokens(r.Context(), claims.UserID); err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to logout", nil)
+		return
+	}
+
+	respondSuccess(w, http.StatusOK, "Logged out successfully", nil)
+}
+
 // GetMe returns the currently authenticated user
 func (h *AuthHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 	// Get claims from context (set by JWT middleware)

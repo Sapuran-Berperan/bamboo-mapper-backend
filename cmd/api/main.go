@@ -88,6 +88,7 @@ func main() {
 			r.Group(func(r chi.Router) {
 				r.Use(appMiddleware.JWTAuth(jwtManager))
 				r.Get("/me", authHandler.GetMe)
+				r.Post("/logout", authHandler.Logout)
 			})
 		})
 	})
