@@ -53,6 +53,7 @@ func main() {
 	// Initialize repository and handlers
 	queries := repository.New(db)
 	authHandler := handler.NewAuthHandler(queries, jwtManager)
+	markerHandler := handler.NewMarkerHandler(queries)
 
 	// Initialize router
 	r := chi.NewRouter()
@@ -90,6 +91,13 @@ func main() {
 				r.Get("/me", authHandler.GetMe)
 				r.Post("/logout", authHandler.Logout)
 			})
+		})
+
+		// Marker routes (protected)
+		r.Route("/markers", func(r chi.Router) {
+			r.Use(appMiddleware.JWTAuth(jwtManager))
+			r.Get("/", markerHandler.List)
+			r.Get("/{id}", markerHandler.GetByID)
 		})
 	})
 
