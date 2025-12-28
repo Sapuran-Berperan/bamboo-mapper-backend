@@ -19,7 +19,8 @@ type GDriveService struct {
 func NewGDriveService(credentialsPath, folderID string) (*GDriveService, error) {
 	ctx := context.Background()
 
-	service, err := drive.NewService(ctx, option.WithCredentialsFile(credentialsPath))
+	// Use WithAuthCredentialsFile for better security validation
+	service, err := drive.NewService(ctx, option.WithAuthCredentialsFile(option.ServiceAccount, credentialsPath))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create drive service: %w", err)
 	}
