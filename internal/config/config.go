@@ -6,12 +6,15 @@ import (
 )
 
 type Config struct {
-	Environment        string
-	Port               string
-	DatabaseURL        string
-	JWTSecret          string
-	AccessTokenExpiry  time.Duration
-	RefreshTokenExpiry time.Duration
+	Environment           string
+	Port                  string
+	DatabaseURL           string
+	JWTSecret             string
+	AccessTokenExpiry     time.Duration
+	RefreshTokenExpiry    time.Duration
+	GDriveCredentialsPath string
+	GDriveTokenPath       string
+	GDriveFolderID        string
 }
 
 func Load() *Config {
@@ -28,12 +31,15 @@ func Load() *Config {
 	refreshExpiry := parseDuration(getEnv("REFRESH_TOKEN_EXPIRY", "168h"), 7*24*time.Hour)
 
 	return &Config{
-		Environment:        env,
-		Port:               getEnv("PORT", "8080"),
-		DatabaseURL:        dbURL,
-		JWTSecret:          getEnv("JWT_SECRET", ""),
-		AccessTokenExpiry:  accessExpiry,
-		RefreshTokenExpiry: refreshExpiry,
+		Environment:           env,
+		Port:                  getEnv("PORT", "8080"),
+		DatabaseURL:           dbURL,
+		JWTSecret:             getEnv("JWT_SECRET", ""),
+		AccessTokenExpiry:     accessExpiry,
+		RefreshTokenExpiry:    refreshExpiry,
+		GDriveCredentialsPath: getEnv("GDRIVE_CREDENTIALS_PATH", ""),
+		GDriveTokenPath:       getEnv("GDRIVE_TOKEN_PATH", ""),
+		GDriveFolderID:        getEnv("GDRIVE_FOLDER_ID", ""),
 	}
 }
 
