@@ -67,3 +67,27 @@ func (r *CreateMarkerRequest) Validate() map[string]string {
 
 	return errors
 }
+
+// UpdateMarkerRequest represents the request body for updating a marker
+// All fields are optional - only provided fields will be updated
+type UpdateMarkerRequest struct {
+	Name         *string
+	Latitude     *string
+	Longitude    *string
+	Description  *string
+	Strain       *string
+	Quantity     *int32
+	OwnerName    *string
+	OwnerContact *string
+}
+
+// Validate validates the update marker request
+func (r *UpdateMarkerRequest) Validate() map[string]string {
+	errors := make(map[string]string)
+
+	if r.Quantity != nil && *r.Quantity < 0 {
+		errors["quantity"] = "Quantity must be non-negative"
+	}
+
+	return errors
+}

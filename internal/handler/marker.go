@@ -268,3 +268,206 @@ func getFileExtension(filename string) string {
 	}
 	return ""
 }
+
+// extractGDriveFileID extracts the file ID from a Google Drive URL
+// Format: https://drive.google.com/uc?id=FILE_ID
+func extractGDriveFileID(url string) string {
+	const prefix = "https://drive.google.com/uc?id="
+	if len(url) > len(prefix) && url[:len(prefix)] == prefix {
+		return url[len(prefix):]
+	}
+	return ""
+}
+
+// Update handles updating an existing marker
+func (h *MarkerHandler) Update(w http.ResponseWriter, r *http.Request) {
+	// Ensure user is authenticated
+	_, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "Unauthorized", nil)
+		return
+	}
+
+	// Get marker ID from URL
+	idParam := chi.URLParam(r, "id")
+	id, err := uuid.Parse(idParam)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid marker ID", nil)
+		return
+	}
+
+	// Fetch existing marker
+	existingMarker, err := h.queries.GetMarkerByID(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			respondError(w, http.StatusNotFound, "Marker not found", nil)
+			return
+		}
+		respondError(w, http.StatusInternalServerError, "Failed to fetch marker", nil)
+		return
+	}
+
+	// Parse multipart form with size limit
+	if err := r.ParseMultipartForm(maxUploadSize); err != nil {
+		respondError(w, http.StatusBadRequest, "Failed to parse form data", nil)
+		return
+	}
+
+	// Build update request with optional fields
+	var req model.UpdateMarkerRequest
+
+	if name := r.FormValue("name"); name != "" {
+		req.Name = &name
+	}
+	if lat := r.FormValue("latitude"); lat != "" {
+		req.Latitude = &lat
+	}
+	if lng := r.FormValue("longitude"); lng != "" {
+		req.Longitude = &lng
+	}
+	if desc := r.FormValue("description"); desc != "" {
+		req.Description = &desc
+	}
+	if strain := r.FormValue("strain"); strain != "" {
+		req.Strain = &strain
+	}
+	if ownerName := r.FormValue("owner_name"); ownerName != "" {
+		req.OwnerName = &ownerName
+	}
+	if ownerContact := r.FormValue("owner_contact"); ownerContact != "" {
+		req.OwnerContact = &ownerContact
+	}
+
+	// Handle optional quantity field
+	if qtyStr := r.FormValue("quantity"); qtyStr != "" {
+		qty, err := strconv.ParseInt(qtyStr, 10, 32)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "Validation failed", map[string]string{
+				"quantity": "Invalid quantity format",
+			})
+			return
+		}
+		qty32 := int32(qty)
+		req.Quantity = &qty32
+	}
+
+	// Validate request
+	if validationErrors := req.Validate(); len(validationErrors) > 0 {
+		respondError(w, http.StatusBadRequest, "Validation failed", validationErrors)
+		return
+	}
+
+	// Prepare update params - use existing values for fields not provided
+	updateParams := repository.UpdateMarkerParams{
+		ID:           id,
+		Name:         existingMarker.Name,
+		Description:  existingMarker.Description,
+		Strain:       existingMarker.Strain,
+		Quantity:     existingMarker.Quantity,
+		Latitude:     existingMarker.Latitude,
+		Longitude:    existingMarker.Longitude,
+		ImageUrl:     existingMarker.ImageUrl,
+		OwnerName:    existingMarker.OwnerName,
+		OwnerContact: existingMarker.OwnerContact,
+	}
+
+	// Override with provided values
+	if req.Name != nil {
+		updateParams.Name = *req.Name
+	}
+	if req.Latitude != nil {
+		updateParams.Latitude = *req.Latitude
+	}
+	if req.Longitude != nil {
+		updateParams.Longitude = *req.Longitude
+	}
+	if req.Description != nil {
+		updateParams.Description = toNullString(req.Description)
+	}
+	if req.Strain != nil {
+		updateParams.Strain = toNullString(req.Strain)
+	}
+	if req.Quantity != nil {
+		updateParams.Quantity = toNullInt32(req.Quantity)
+	}
+	if req.OwnerName != nil {
+		updateParams.OwnerName = toNullString(req.OwnerName)
+	}
+	if req.OwnerContact != nil {
+		updateParams.OwnerContact = toNullString(req.OwnerContact)
+	}
+
+	// Handle image upload (optional)
+	file, header, err := r.FormFile("image")
+	if err == nil {
+		defer file.Close()
+
+		if h.gdrive != nil {
+			// Delete old image if exists
+			if existingMarker.ImageUrl.Valid {
+				oldFileID := extractGDriveFileID(existingMarker.ImageUrl.String)
+				if oldFileID != "" {
+					if deleteErr := h.gdrive.DeleteFile(oldFileID); deleteErr != nil {
+						log.Printf("Failed to delete old image from Google Drive: %v", deleteErr)
+						// Continue anyway - old file might already be deleted
+					}
+				}
+			}
+
+			// Upload new image with short_code as filename
+			ext := getFileExtension(header.Filename)
+			filename := existingMarker.ShortCode + ext
+
+			url, uploadErr := h.gdrive.UploadFile(file, filename, header.Header.Get("Content-Type"))
+			if uploadErr != nil {
+				log.Printf("Failed to upload image to Google Drive: %v", uploadErr)
+				respondError(w, http.StatusInternalServerError, "Failed to upload image", nil)
+				return
+			}
+			updateParams.ImageUrl = sql.NullString{String: url, Valid: true}
+		} else {
+			log.Println("Image provided but Google Drive service not configured")
+		}
+	}
+
+	// Update marker in database
+	marker, err := h.queries.UpdateMarker(r.Context(), updateParams)
+	if err != nil {
+		log.Printf("Failed to update marker: %v", err)
+		respondError(w, http.StatusInternalServerError, "Failed to update marker", nil)
+		return
+	}
+
+	// Build response
+	response := model.MarkerResponse{
+		ID:        marker.ID,
+		ShortCode: marker.ShortCode,
+		CreatorID: marker.CreatorID,
+		Name:      marker.Name,
+		Latitude:  marker.Latitude,
+		Longitude: marker.Longitude,
+		CreatedAt: marker.CreatedAt.Time,
+		UpdatedAt: marker.UpdatedAt.Time,
+	}
+
+	if marker.Description.Valid {
+		response.Description = &marker.Description.String
+	}
+	if marker.Strain.Valid {
+		response.Strain = &marker.Strain.String
+	}
+	if marker.Quantity.Valid {
+		response.Quantity = &marker.Quantity.Int32
+	}
+	if marker.ImageUrl.Valid {
+		response.ImageURL = &marker.ImageUrl.String
+	}
+	if marker.OwnerName.Valid {
+		response.OwnerName = &marker.OwnerName.String
+	}
+	if marker.OwnerContact.Valid {
+		response.OwnerContact = &marker.OwnerContact.String
+	}
+
+	respondSuccess(w, http.StatusOK, "Marker updated successfully", response)
+}
