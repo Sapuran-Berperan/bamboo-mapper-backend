@@ -842,3 +842,80 @@ func TestMarkerHandler_Delete_Unauthorized(t *testing.T) {
 		t.Errorf("expected status %d, got %d: %s", http.StatusUnauthorized, rr.Code, rr.Body.String())
 	}
 }
+
+func TestMarkerHandler_GetByShortCode_Success(t *testing.T) {
+	cleanupMarkers(t)
+	cleanupUsers(t)
+
+	userID := createTestUserForMarker(t)
+	createTestMarker(t, userID) // Creates marker with short_code "TEST001"
+
+	handler := NewMarkerHandler(testQueries, nil)
+
+	r := chi.NewRouter()
+	r.Get("/markers/code/{shortCode}", handler.GetByShortCode)
+
+	req := httptest.NewRequest(http.MethodGet, "/markers/code/TEST001", nil)
+	req = addClaimsToContext(req, userID)
+
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected status %d, got %d: %s", http.StatusOK, rr.Code, rr.Body.String())
+	}
+
+	var response Response
+	if err := json.Unmarshal(rr.Body.Bytes(), &response); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+
+	if !response.Meta.Success {
+		t.Error("expected success=true")
+	}
+
+	data, ok := response.Data.(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected data to be a map, got %T", response.Data)
+	}
+
+	if data["short_code"] != "TEST001" {
+		t.Errorf("expected short_code 'TEST001', got %v", data["short_code"])
+	}
+	if data["name"] != "Test Bamboo" {
+		t.Errorf("expected name 'Test Bamboo', got %v", data["name"])
+	}
+}
+
+func TestMarkerHandler_GetByShortCode_NotFound(t *testing.T) {
+	cleanupMarkers(t)
+	cleanupUsers(t)
+
+	userID := createTestUserForMarker(t)
+
+	handler := NewMarkerHandler(testQueries, nil)
+
+	r := chi.NewRouter()
+	r.Get("/markers/code/{shortCode}", handler.GetByShortCode)
+
+	req := httptest.NewRequest(http.MethodGet, "/markers/code/NOTEXIST", nil)
+	req = addClaimsToContext(req, userID)
+
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusNotFound {
+		t.Errorf("expected status %d, got %d: %s", http.StatusNotFound, rr.Code, rr.Body.String())
+	}
+
+	var response Response
+	json.Unmarshal(rr.Body.Bytes(), &response)
+
+	if response.Meta.Success {
+		t.Error("expected success=false")
+	}
+
+	if response.Meta.Message != "Marker not found" {
+		t.Errorf("unexpected message: %s", response.Meta.Message)
+	}
+}
