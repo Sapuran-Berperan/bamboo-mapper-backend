@@ -31,3 +31,7 @@ UPDATE markers SET
     updated_at = NOW()
 WHERE id = $1
 RETURNING *;
+
+-- name: DeleteMarker :exec
+-- Deletes a marker by ID
+DELETE FROM markers WHERE id = $1;

@@ -69,6 +69,16 @@ func (q *Queries) CreateMarker(ctx context.Context, arg CreateMarkerParams) (Mar
 	return i, err
 }
 
+const deleteMarker = `-- name: DeleteMarker :exec
+DELETE FROM markers WHERE id = $1
+`
+
+// Deletes a marker by ID
+func (q *Queries) DeleteMarker(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, deleteMarker, id)
+	return err
+}
+
 const getMarkerByID = `-- name: GetMarkerByID :one
 SELECT id, short_code, creator_id, name, description, strain, quantity, latitude, longitude, image_url, owner_name, owner_contact, created_at, updated_at FROM markers WHERE id = $1
 `

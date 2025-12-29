@@ -16,6 +16,8 @@ type Querier interface {
 	CreateRefreshToken(ctx context.Context, arg CreateRefreshTokenParams) (CreateRefreshTokenRow, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (CreateUserRow, error)
 	DeleteExpiredRefreshTokens(ctx context.Context) error
+	// Deletes a marker by ID
+	DeleteMarker(ctx context.Context, id uuid.UUID) error
 	// Returns full marker details by ID
 	GetMarkerByID(ctx context.Context, id uuid.UUID) (Marker, error)
 	GetRefreshTokenByHash(ctx context.Context, tokenHash string) (RefreshToken, error)
