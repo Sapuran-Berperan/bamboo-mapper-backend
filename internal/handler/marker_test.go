@@ -546,3 +546,199 @@ func TestMarkerHandler_Create_Unauthorized(t *testing.T) {
 		t.Errorf("expected status %d, got %d: %s", http.StatusUnauthorized, rr.Code, rr.Body.String())
 	}
 }
+
+func TestMarkerHandler_Update_Success(t *testing.T) {
+	cleanupMarkers(t)
+	cleanupUsers(t)
+
+	// Create test user and marker
+	userID := createTestUserForMarker(t)
+	markerID := createTestMarker(t, userID)
+
+	handler := NewMarkerHandler(testQueries, nil)
+
+	// Update all fields
+	fields := map[string]string{
+		"name":          "Updated Bamboo Name",
+		"latitude":      "-7.99999999",
+		"longitude":     "110.99999999",
+		"description":   "Updated description",
+		"strain":        "Updated strain",
+		"quantity":      "200",
+		"owner_name":    "Updated Owner",
+		"owner_contact": "08123456789",
+	}
+
+	req := createMarkerFormRequest(t, fields)
+	req = addClaimsToContext(req, userID)
+
+	// Create chi context with URL param
+	r := chi.NewRouter()
+	r.Put("/markers/{id}", handler.Update)
+
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, httptest.NewRequest(http.MethodPut, "/markers/"+markerID.String(), req.Body))
+	// Re-create request with proper headers
+	req2 := httptest.NewRequest(http.MethodPut, "/markers/"+markerID.String(), nil)
+	req2 = addClaimsToContext(req2, userID)
+
+	// Need to create a fresh request for chi router
+	reqBody := createMarkerFormRequest(t, fields)
+	finalReq := httptest.NewRequest(http.MethodPut, "/markers/"+markerID.String(), reqBody.Body)
+	finalReq.Header = reqBody.Header
+	finalReq = addClaimsToContext(finalReq, userID)
+
+	rr = httptest.NewRecorder()
+	r.ServeHTTP(rr, finalReq)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected status %d, got %d: %s", http.StatusOK, rr.Code, rr.Body.String())
+	}
+
+	var response Response
+	if err := json.Unmarshal(rr.Body.Bytes(), &response); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+
+	if !response.Meta.Success {
+		t.Error("expected success=true")
+	}
+
+	if response.Meta.Message != "Marker updated successfully" {
+		t.Errorf("unexpected message: %s", response.Meta.Message)
+	}
+
+	data, ok := response.Data.(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected data to be a map, got %T", response.Data)
+	}
+
+	// Verify updated data
+	if data["name"] != "Updated Bamboo Name" {
+		t.Errorf("expected name 'Updated Bamboo Name', got %v", data["name"])
+	}
+	if data["latitude"] != "-7.99999999" {
+		t.Errorf("expected latitude '-7.99999999', got %v", data["latitude"])
+	}
+	if data["description"] != "Updated description" {
+		t.Errorf("expected description 'Updated description', got %v", data["description"])
+	}
+}
+
+func TestMarkerHandler_Update_PartialFields(t *testing.T) {
+	cleanupMarkers(t)
+	cleanupUsers(t)
+
+	userID := createTestUserForMarker(t)
+	markerID := createTestMarker(t, userID)
+
+	handler := NewMarkerHandler(testQueries, nil)
+
+	// Only update name - other fields should remain unchanged
+	fields := map[string]string{
+		"name": "Only Name Updated",
+	}
+
+	r := chi.NewRouter()
+	r.Put("/markers/{id}", handler.Update)
+
+	reqBody := createMarkerFormRequest(t, fields)
+	req := httptest.NewRequest(http.MethodPut, "/markers/"+markerID.String(), reqBody.Body)
+	req.Header = reqBody.Header
+	req = addClaimsToContext(req, userID)
+
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected status %d, got %d: %s", http.StatusOK, rr.Code, rr.Body.String())
+	}
+
+	var response Response
+	json.Unmarshal(rr.Body.Bytes(), &response)
+
+	data := response.Data.(map[string]interface{})
+
+	// Name should be updated
+	if data["name"] != "Only Name Updated" {
+		t.Errorf("expected name 'Only Name Updated', got %v", data["name"])
+	}
+
+	// Other fields should remain unchanged from createTestMarker
+	if data["latitude"] != "-7.12345678" {
+		t.Errorf("expected latitude '-7.12345678' (unchanged), got %v", data["latitude"])
+	}
+	if data["description"] != "Test description" {
+		t.Errorf("expected description 'Test description' (unchanged), got %v", data["description"])
+	}
+}
+
+func TestMarkerHandler_Update_NotFound(t *testing.T) {
+	cleanupMarkers(t)
+	cleanupUsers(t)
+
+	userID := createTestUserForMarker(t)
+
+	handler := NewMarkerHandler(testQueries, nil)
+
+	randomID := uuid.New()
+
+	fields := map[string]string{
+		"name": "Update Non-existent",
+	}
+
+	r := chi.NewRouter()
+	r.Put("/markers/{id}", handler.Update)
+
+	reqBody := createMarkerFormRequest(t, fields)
+	req := httptest.NewRequest(http.MethodPut, "/markers/"+randomID.String(), reqBody.Body)
+	req.Header = reqBody.Header
+	req = addClaimsToContext(req, userID)
+
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusNotFound {
+		t.Errorf("expected status %d, got %d: %s", http.StatusNotFound, rr.Code, rr.Body.String())
+	}
+
+	var response Response
+	json.Unmarshal(rr.Body.Bytes(), &response)
+
+	if response.Meta.Success {
+		t.Error("expected success=false")
+	}
+
+	if response.Meta.Message != "Marker not found" {
+		t.Errorf("unexpected message: %s", response.Meta.Message)
+	}
+}
+
+func TestMarkerHandler_Update_Unauthorized(t *testing.T) {
+	cleanupMarkers(t)
+	cleanupUsers(t)
+
+	userID := createTestUserForMarker(t)
+	markerID := createTestMarker(t, userID)
+
+	handler := NewMarkerHandler(testQueries, nil)
+
+	fields := map[string]string{
+		"name": "Unauthorized Update",
+	}
+
+	r := chi.NewRouter()
+	r.Put("/markers/{id}", handler.Update)
+
+	reqBody := createMarkerFormRequest(t, fields)
+	req := httptest.NewRequest(http.MethodPut, "/markers/"+markerID.String(), reqBody.Body)
+	req.Header = reqBody.Header
+	// Note: NOT adding claims to context
+
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Errorf("expected status %d, got %d: %s", http.StatusUnauthorized, rr.Code, rr.Body.String())
+	}
+}
