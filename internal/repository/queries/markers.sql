@@ -15,3 +15,19 @@ INSERT INTO markers (
     quantity, latitude, longitude, image_url, owner_name, owner_contact
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 RETURNING *;
+
+-- name: UpdateMarker :one
+-- Updates an existing marker and returns the updated record
+UPDATE markers SET
+    name = $2,
+    description = $3,
+    strain = $4,
+    quantity = $5,
+    latitude = $6,
+    longitude = $7,
+    image_url = $8,
+    owner_name = $9,
+    owner_contact = $10,
+    updated_at = NOW()
+WHERE id = $1
+RETURNING *;

@@ -25,6 +25,8 @@ type Querier interface {
 	ListMarkersLightweight(ctx context.Context) ([]ListMarkersLightweightRow, error)
 	RevokeAllUserRefreshTokens(ctx context.Context, userID uuid.UUID) error
 	RevokeRefreshToken(ctx context.Context, tokenHash string) error
+	// Updates an existing marker and returns the updated record
+	UpdateMarker(ctx context.Context, arg UpdateMarkerParams) (Marker, error)
 }
 
 var _ Querier = (*Queries)(nil)

@@ -139,3 +139,66 @@ func (q *Queries) ListMarkersLightweight(ctx context.Context) ([]ListMarkersLigh
 	}
 	return items, nil
 }
+
+const updateMarker = `-- name: UpdateMarker :one
+UPDATE markers SET
+    name = $2,
+    description = $3,
+    strain = $4,
+    quantity = $5,
+    latitude = $6,
+    longitude = $7,
+    image_url = $8,
+    owner_name = $9,
+    owner_contact = $10,
+    updated_at = NOW()
+WHERE id = $1
+RETURNING id, short_code, creator_id, name, description, strain, quantity, latitude, longitude, image_url, owner_name, owner_contact, created_at, updated_at
+`
+
+type UpdateMarkerParams struct {
+	ID           uuid.UUID      `json:"id"`
+	Name         string         `json:"name"`
+	Description  sql.NullString `json:"description"`
+	Strain       sql.NullString `json:"strain"`
+	Quantity     sql.NullInt32  `json:"quantity"`
+	Latitude     string         `json:"latitude"`
+	Longitude    string         `json:"longitude"`
+	ImageUrl     sql.NullString `json:"image_url"`
+	OwnerName    sql.NullString `json:"owner_name"`
+	OwnerContact sql.NullString `json:"owner_contact"`
+}
+
+// Updates an existing marker and returns the updated record
+func (q *Queries) UpdateMarker(ctx context.Context, arg UpdateMarkerParams) (Marker, error) {
+	row := q.db.QueryRowContext(ctx, updateMarker,
+		arg.ID,
+		arg.Name,
+		arg.Description,
+		arg.Strain,
+		arg.Quantity,
+		arg.Latitude,
+		arg.Longitude,
+		arg.ImageUrl,
+		arg.OwnerName,
+		arg.OwnerContact,
+	)
+	var i Marker
+	err := row.Scan(
+		&i.ID,
+		&i.ShortCode,
+		&i.CreatorID,
+		&i.Name,
+		&i.Description,
+		&i.Strain,
+		&i.Quantity,
+		&i.Latitude,
+		&i.Longitude,
+		&i.ImageUrl,
+		&i.OwnerName,
+		&i.OwnerContact,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
