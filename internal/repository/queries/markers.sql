@@ -8,6 +8,10 @@ ORDER BY created_at DESC;
 -- Returns full marker details by ID
 SELECT * FROM markers WHERE id = $1;
 
+-- name: GetMarkerByShortCode :one
+-- Returns full marker details by short_code (for QR code scanning)
+SELECT * FROM markers WHERE short_code = $1;
+
 -- name: CreateMarker :one
 -- Creates a new marker and returns the created record
 INSERT INTO markers (

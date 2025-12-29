@@ -106,6 +106,33 @@ func (q *Queries) GetMarkerByID(ctx context.Context, id uuid.UUID) (Marker, erro
 	return i, err
 }
 
+const getMarkerByShortCode = `-- name: GetMarkerByShortCode :one
+SELECT id, short_code, creator_id, name, description, strain, quantity, latitude, longitude, image_url, owner_name, owner_contact, created_at, updated_at FROM markers WHERE short_code = $1
+`
+
+// Returns full marker details by short_code (for QR code scanning)
+func (q *Queries) GetMarkerByShortCode(ctx context.Context, shortCode string) (Marker, error) {
+	row := q.db.QueryRowContext(ctx, getMarkerByShortCode, shortCode)
+	var i Marker
+	err := row.Scan(
+		&i.ID,
+		&i.ShortCode,
+		&i.CreatorID,
+		&i.Name,
+		&i.Description,
+		&i.Strain,
+		&i.Quantity,
+		&i.Latitude,
+		&i.Longitude,
+		&i.ImageUrl,
+		&i.OwnerName,
+		&i.OwnerContact,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const listMarkersLightweight = `-- name: ListMarkersLightweight :many
 SELECT id, short_code, name, latitude, longitude
 FROM markers

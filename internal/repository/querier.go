@@ -20,6 +20,8 @@ type Querier interface {
 	DeleteMarker(ctx context.Context, id uuid.UUID) error
 	// Returns full marker details by ID
 	GetMarkerByID(ctx context.Context, id uuid.UUID) (Marker, error)
+	// Returns full marker details by short_code (for QR code scanning)
+	GetMarkerByShortCode(ctx context.Context, shortCode string) (Marker, error)
 	GetRefreshTokenByHash(ctx context.Context, tokenHash string) (RefreshToken, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (GetUserByIDRow, error)
