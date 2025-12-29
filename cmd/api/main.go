@@ -114,6 +114,7 @@ func main() {
 			r.Use(appMiddleware.JWTAuth(jwtManager))
 			r.Get("/", markerHandler.List)
 			r.Post("/", markerHandler.Create)
+			r.Get("/code/{shortCode}", markerHandler.GetByShortCode)
 			r.Get("/{id}", markerHandler.GetByID)
 			r.Put("/{id}", markerHandler.Update)
 			r.Delete("/{id}", markerHandler.Delete)

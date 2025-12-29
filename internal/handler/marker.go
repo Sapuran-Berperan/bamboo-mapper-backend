@@ -109,6 +109,59 @@ func (h *MarkerHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 	respondSuccess(w, http.StatusOK, "Marker retrieved successfully", response)
 }
 
+// GetByShortCode returns full marker details by short_code (for QR code scanning)
+func (h *MarkerHandler) GetByShortCode(w http.ResponseWriter, r *http.Request) {
+	shortCode := chi.URLParam(r, "shortCode")
+	if shortCode == "" {
+		respondError(w, http.StatusBadRequest, "Short code is required", nil)
+		return
+	}
+
+	marker, err := h.queries.GetMarkerByShortCode(r.Context(), shortCode)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			respondError(w, http.StatusNotFound, "Marker not found", nil)
+			return
+		}
+		respondError(w, http.StatusInternalServerError, "Failed to fetch marker", nil)
+		return
+	}
+
+	// Convert to response model with nullable fields
+	response := model.MarkerResponse{
+		ID:        marker.ID,
+		ShortCode: marker.ShortCode,
+		CreatorID: marker.CreatorID,
+		Name:      marker.Name,
+		Latitude:  marker.Latitude,
+		Longitude: marker.Longitude,
+		CreatedAt: marker.CreatedAt.Time,
+		UpdatedAt: marker.UpdatedAt.Time,
+	}
+
+	// Handle nullable fields
+	if marker.Description.Valid {
+		response.Description = &marker.Description.String
+	}
+	if marker.Strain.Valid {
+		response.Strain = &marker.Strain.String
+	}
+	if marker.Quantity.Valid {
+		response.Quantity = &marker.Quantity.Int32
+	}
+	if marker.ImageUrl.Valid {
+		response.ImageURL = &marker.ImageUrl.String
+	}
+	if marker.OwnerName.Valid {
+		response.OwnerName = &marker.OwnerName.String
+	}
+	if marker.OwnerContact.Valid {
+		response.OwnerContact = &marker.OwnerContact.String
+	}
+
+	respondSuccess(w, http.StatusOK, "Marker retrieved successfully", response)
+}
+
 // Create handles creating a new marker with optional image upload
 func (h *MarkerHandler) Create(w http.ResponseWriter, r *http.Request) {
 	// Get creator ID from JWT context
