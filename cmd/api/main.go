@@ -116,6 +116,7 @@ func main() {
 			r.Post("/", markerHandler.Create)
 			r.Get("/{id}", markerHandler.GetByID)
 			r.Put("/{id}", markerHandler.Update)
+			r.Delete("/{id}", markerHandler.Delete)
 		})
 	})
 

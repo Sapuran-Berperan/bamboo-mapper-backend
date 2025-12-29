@@ -471,3 +471,52 @@ func (h *MarkerHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 	respondSuccess(w, http.StatusOK, "Marker updated successfully", response)
 }
+
+// Delete handles deleting an existing marker
+func (h *MarkerHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	// Ensure user is authenticated
+	_, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "Unauthorized", nil)
+		return
+	}
+
+	// Get marker ID from URL
+	idParam := chi.URLParam(r, "id")
+	id, err := uuid.Parse(idParam)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid marker ID", nil)
+		return
+	}
+
+	// Fetch existing marker to get image URL for cleanup
+	existingMarker, err := h.queries.GetMarkerByID(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			respondError(w, http.StatusNotFound, "Marker not found", nil)
+			return
+		}
+		respondError(w, http.StatusInternalServerError, "Failed to fetch marker", nil)
+		return
+	}
+
+	// Delete image from Google Drive if exists
+	if existingMarker.ImageUrl.Valid && h.gdrive != nil {
+		fileID := extractGDriveFileID(existingMarker.ImageUrl.String)
+		if fileID != "" {
+			if deleteErr := h.gdrive.DeleteFile(fileID); deleteErr != nil {
+				log.Printf("Failed to delete image from Google Drive: %v", deleteErr)
+				// Continue anyway - don't fail the delete operation
+			}
+		}
+	}
+
+	// Delete marker from database
+	if err := h.queries.DeleteMarker(r.Context(), id); err != nil {
+		log.Printf("Failed to delete marker: %v", err)
+		respondError(w, http.StatusInternalServerError, "Failed to delete marker", nil)
+		return
+	}
+
+	respondSuccess(w, http.StatusOK, "Marker deleted successfully", nil)
+}
