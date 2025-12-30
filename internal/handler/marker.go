@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"bytes"
 	"database/sql"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -14,21 +16,25 @@ import (
 	"github.com/Sapuran-Berperan/bamboo-mapper-backend/internal/util"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/yeqown/go-qrcode/v2"
+	"github.com/yeqown/go-qrcode/writer/standard"
 )
 
 const maxUploadSize = 10 << 20 // 10 MB
 
 // MarkerHandler handles marker-related requests
 type MarkerHandler struct {
-	queries *repository.Queries
-	gdrive  *storage.GDriveService
+	queries         *repository.Queries
+	gdrive          *storage.GDriveService
+	deepLinkBaseURL string
 }
 
 // NewMarkerHandler creates a new MarkerHandler
-func NewMarkerHandler(queries *repository.Queries, gdrive *storage.GDriveService) *MarkerHandler {
+func NewMarkerHandler(queries *repository.Queries, gdrive *storage.GDriveService, deepLinkBaseURL string) *MarkerHandler {
 	return &MarkerHandler{
-		queries: queries,
-		gdrive:  gdrive,
+		queries:         queries,
+		gdrive:          gdrive,
+		deepLinkBaseURL: deepLinkBaseURL,
 	}
 }
 
@@ -572,4 +578,70 @@ func (h *MarkerHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondSuccess(w, http.StatusOK, "Marker deleted successfully", nil)
+}
+
+// nopCloser wraps bytes.Buffer to implement io.WriteCloser
+type nopCloser struct {
+	*bytes.Buffer
+}
+
+func (nopCloser) Close() error { return nil }
+
+// GenerateQR generates a QR code image for a marker
+func (h *MarkerHandler) GenerateQR(w http.ResponseWriter, r *http.Request) {
+	// Ensure user is authenticated
+	_, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "Unauthorized", nil)
+		return
+	}
+
+	// Get marker ID from URL
+	idParam := chi.URLParam(r, "id")
+	id, err := uuid.Parse(idParam)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid marker ID", nil)
+		return
+	}
+
+	// Fetch marker to get short_code
+	marker, err := h.queries.GetMarkerByID(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			respondError(w, http.StatusNotFound, "Marker not found", nil)
+			return
+		}
+		respondError(w, http.StatusInternalServerError, "Failed to fetch marker", nil)
+		return
+	}
+
+	// Build deep link URL
+	deepLink := fmt.Sprintf("%s/marker/%s", h.deepLinkBaseURL, marker.ShortCode)
+
+	// Generate QR code
+	qrc, err := qrcode.New(deepLink)
+	if err != nil {
+		log.Printf("Failed to create QR code: %v", err)
+		respondError(w, http.StatusInternalServerError, "Failed to generate QR code", nil)
+		return
+	}
+
+	// Write QR code to buffer (PNG format)
+	buf := &bytes.Buffer{}
+	wr := standard.NewWithWriter(
+		nopCloser{buf},
+		standard.WithQRWidth(10),
+		standard.WithBuiltinImageEncoder(standard.PNG_FORMAT),
+	)
+	if err := qrc.Save(wr); err != nil {
+		log.Printf("Failed to save QR code: %v", err)
+		respondError(w, http.StatusInternalServerError, "Failed to generate QR code", nil)
+		return
+	}
+
+	// Return PNG image
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("inline; filename=\"%s.png\"", marker.ShortCode))
+	w.WriteHeader(http.StatusOK)
+	w.Write(buf.Bytes())
 }

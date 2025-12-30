@@ -69,7 +69,7 @@ func main() {
 	// Initialize repository and handlers
 	queries := repository.New(db)
 	authHandler := handler.NewAuthHandler(queries, jwtManager)
-	markerHandler := handler.NewMarkerHandler(queries, gdriveService)
+	markerHandler := handler.NewMarkerHandler(queries, gdriveService, cfg.DeepLinkBaseURL)
 
 	// Initialize router
 	r := chi.NewRouter()
@@ -109,15 +109,21 @@ func main() {
 			})
 		})
 
-		// Marker routes (protected)
+		// Marker routes
 		r.Route("/markers", func(r chi.Router) {
-			r.Use(appMiddleware.JWTAuth(jwtManager))
-			r.Get("/", markerHandler.List)
-			r.Post("/", markerHandler.Create)
+			// Public route - for QR code scanning
 			r.Get("/code/{shortCode}", markerHandler.GetByShortCode)
-			r.Get("/{id}", markerHandler.GetByID)
-			r.Put("/{id}", markerHandler.Update)
-			r.Delete("/{id}", markerHandler.Delete)
+
+			// Protected routes
+			r.Group(func(r chi.Router) {
+				r.Use(appMiddleware.JWTAuth(jwtManager))
+				r.Get("/", markerHandler.List)
+				r.Post("/", markerHandler.Create)
+				r.Get("/{id}", markerHandler.GetByID)
+				r.Get("/{id}/qr", markerHandler.GenerateQR)
+				r.Put("/{id}", markerHandler.Update)
+				r.Delete("/{id}", markerHandler.Delete)
+			})
 		})
 	})
 
