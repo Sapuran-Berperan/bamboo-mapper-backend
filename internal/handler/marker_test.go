@@ -62,7 +62,7 @@ func TestMarkerHandler_List_Success(t *testing.T) {
 	userID := createTestUserForMarker(t)
 	createTestMarker(t, userID)
 
-	handler := NewMarkerHandler(testQueries, nil)
+	handler := NewMarkerHandler(testQueries, nil, "https://test.bamboomapper.com")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/markers", nil)
 	rr := httptest.NewRecorder()
@@ -108,7 +108,7 @@ func TestMarkerHandler_List_Empty(t *testing.T) {
 	cleanupMarkers(t)
 	cleanupUsers(t)
 
-	handler := NewMarkerHandler(testQueries, nil)
+	handler := NewMarkerHandler(testQueries, nil, "https://test.bamboomapper.com")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/markers", nil)
 	rr := httptest.NewRecorder()
@@ -145,7 +145,7 @@ func TestMarkerHandler_GetByID_Success(t *testing.T) {
 	userID := createTestUserForMarker(t)
 	markerID := createTestMarker(t, userID)
 
-	handler := NewMarkerHandler(testQueries, nil)
+	handler := NewMarkerHandler(testQueries, nil, "https://test.bamboomapper.com")
 
 	// Create chi context with URL param
 	r := chi.NewRouter()
@@ -193,7 +193,7 @@ func TestMarkerHandler_GetByID_NotFound(t *testing.T) {
 	cleanupMarkers(t)
 	cleanupUsers(t)
 
-	handler := NewMarkerHandler(testQueries, nil)
+	handler := NewMarkerHandler(testQueries, nil, "https://test.bamboomapper.com")
 
 	randomID := uuid.New()
 
@@ -224,7 +224,7 @@ func TestMarkerHandler_GetByID_NotFound(t *testing.T) {
 }
 
 func TestMarkerHandler_GetByID_InvalidID(t *testing.T) {
-	handler := NewMarkerHandler(testQueries, nil)
+	handler := NewMarkerHandler(testQueries, nil, "https://test.bamboomapper.com")
 
 	r := chi.NewRouter()
 	r.Get("/markers/{id}", handler.GetByID)
@@ -259,7 +259,7 @@ func TestMarkerHandler_List_LightweightFields(t *testing.T) {
 	userID := createTestUserForMarker(t)
 	createTestMarker(t, userID)
 
-	handler := NewMarkerHandler(testQueries, nil)
+	handler := NewMarkerHandler(testQueries, nil, "https://test.bamboomapper.com")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/markers", nil)
 	rr := httptest.NewRecorder()
@@ -327,7 +327,7 @@ func TestMarkerHandler_Create_Success(t *testing.T) {
 	// Create test user
 	userID := createTestUserForMarker(t)
 
-	handler := NewMarkerHandler(testQueries, nil)
+	handler := NewMarkerHandler(testQueries, nil, "https://test.bamboomapper.com")
 
 	// Create form data with required fields
 	fields := map[string]string{
@@ -400,7 +400,7 @@ func TestMarkerHandler_Create_MinimalFields(t *testing.T) {
 
 	userID := createTestUserForMarker(t)
 
-	handler := NewMarkerHandler(testQueries, nil)
+	handler := NewMarkerHandler(testQueries, nil, "https://test.bamboomapper.com")
 
 	// Create form data with only required fields
 	fields := map[string]string{
@@ -448,7 +448,7 @@ func TestMarkerHandler_Create_ValidationErrors(t *testing.T) {
 
 	userID := createTestUserForMarker(t)
 
-	handler := NewMarkerHandler(testQueries, nil)
+	handler := NewMarkerHandler(testQueries, nil, "https://test.bamboomapper.com")
 
 	// Missing required fields
 	fields := map[string]string{
@@ -500,7 +500,7 @@ func TestMarkerHandler_Create_InvalidQuantity(t *testing.T) {
 
 	userID := createTestUserForMarker(t)
 
-	handler := NewMarkerHandler(testQueries, nil)
+	handler := NewMarkerHandler(testQueries, nil, "https://test.bamboomapper.com")
 
 	fields := map[string]string{
 		"name":      "Test Bamboo",
@@ -528,7 +528,7 @@ func TestMarkerHandler_Create_InvalidQuantity(t *testing.T) {
 }
 
 func TestMarkerHandler_Create_Unauthorized(t *testing.T) {
-	handler := NewMarkerHandler(testQueries, nil)
+	handler := NewMarkerHandler(testQueries, nil, "https://test.bamboomapper.com")
 
 	fields := map[string]string{
 		"name":      "Test Bamboo",
@@ -555,7 +555,7 @@ func TestMarkerHandler_Update_Success(t *testing.T) {
 	userID := createTestUserForMarker(t)
 	markerID := createTestMarker(t, userID)
 
-	handler := NewMarkerHandler(testQueries, nil)
+	handler := NewMarkerHandler(testQueries, nil, "https://test.bamboomapper.com")
 
 	// Update all fields
 	fields := map[string]string{
@@ -632,7 +632,7 @@ func TestMarkerHandler_Update_PartialFields(t *testing.T) {
 	userID := createTestUserForMarker(t)
 	markerID := createTestMarker(t, userID)
 
-	handler := NewMarkerHandler(testQueries, nil)
+	handler := NewMarkerHandler(testQueries, nil, "https://test.bamboomapper.com")
 
 	// Only update name - other fields should remain unchanged
 	fields := map[string]string{
@@ -679,7 +679,7 @@ func TestMarkerHandler_Update_NotFound(t *testing.T) {
 
 	userID := createTestUserForMarker(t)
 
-	handler := NewMarkerHandler(testQueries, nil)
+	handler := NewMarkerHandler(testQueries, nil, "https://test.bamboomapper.com")
 
 	randomID := uuid.New()
 
@@ -721,7 +721,7 @@ func TestMarkerHandler_Update_Unauthorized(t *testing.T) {
 	userID := createTestUserForMarker(t)
 	markerID := createTestMarker(t, userID)
 
-	handler := NewMarkerHandler(testQueries, nil)
+	handler := NewMarkerHandler(testQueries, nil, "https://test.bamboomapper.com")
 
 	fields := map[string]string{
 		"name": "Unauthorized Update",
@@ -750,7 +750,7 @@ func TestMarkerHandler_Delete_Success(t *testing.T) {
 	userID := createTestUserForMarker(t)
 	markerID := createTestMarker(t, userID)
 
-	handler := NewMarkerHandler(testQueries, nil)
+	handler := NewMarkerHandler(testQueries, nil, "https://test.bamboomapper.com")
 
 	r := chi.NewRouter()
 	r.Delete("/markers/{id}", handler.Delete)
@@ -791,7 +791,7 @@ func TestMarkerHandler_Delete_NotFound(t *testing.T) {
 
 	userID := createTestUserForMarker(t)
 
-	handler := NewMarkerHandler(testQueries, nil)
+	handler := NewMarkerHandler(testQueries, nil, "https://test.bamboomapper.com")
 
 	randomID := uuid.New()
 
@@ -827,7 +827,7 @@ func TestMarkerHandler_Delete_Unauthorized(t *testing.T) {
 	userID := createTestUserForMarker(t)
 	markerID := createTestMarker(t, userID)
 
-	handler := NewMarkerHandler(testQueries, nil)
+	handler := NewMarkerHandler(testQueries, nil, "https://test.bamboomapper.com")
 
 	r := chi.NewRouter()
 	r.Delete("/markers/{id}", handler.Delete)
@@ -850,7 +850,7 @@ func TestMarkerHandler_GetByShortCode_Success(t *testing.T) {
 	userID := createTestUserForMarker(t)
 	createTestMarker(t, userID) // Creates marker with short_code "TEST001"
 
-	handler := NewMarkerHandler(testQueries, nil)
+	handler := NewMarkerHandler(testQueries, nil, "https://test.bamboomapper.com")
 
 	r := chi.NewRouter()
 	r.Get("/markers/code/{shortCode}", handler.GetByShortCode)
@@ -893,7 +893,7 @@ func TestMarkerHandler_GetByShortCode_NotFound(t *testing.T) {
 
 	userID := createTestUserForMarker(t)
 
-	handler := NewMarkerHandler(testQueries, nil)
+	handler := NewMarkerHandler(testQueries, nil, "https://test.bamboomapper.com")
 
 	r := chi.NewRouter()
 	r.Get("/markers/code/{shortCode}", handler.GetByShortCode)
@@ -917,5 +917,182 @@ func TestMarkerHandler_GetByShortCode_NotFound(t *testing.T) {
 
 	if response.Meta.Message != "Marker not found" {
 		t.Errorf("unexpected message: %s", response.Meta.Message)
+	}
+}
+
+func TestMarkerHandler_GenerateQR_Success(t *testing.T) {
+	cleanupMarkers(t)
+	cleanupUsers(t)
+
+	userID := createTestUserForMarker(t)
+	markerID := createTestMarker(t, userID)
+
+	handler := NewMarkerHandler(testQueries, nil, "https://test.bamboomapper.com")
+
+	r := chi.NewRouter()
+	r.Get("/markers/{id}/qr", handler.GenerateQR)
+
+	req := httptest.NewRequest(http.MethodGet, "/markers/"+markerID.String()+"/qr", nil)
+	req = addClaimsToContext(req, userID)
+
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected status %d, got %d: %s", http.StatusOK, rr.Code, rr.Body.String())
+	}
+
+	// Verify Content-Type is image/png
+	contentType := rr.Header().Get("Content-Type")
+	if contentType != "image/png" {
+		t.Errorf("expected Content-Type 'image/png', got %s", contentType)
+	}
+
+	// Verify Content-Disposition header
+	contentDisposition := rr.Header().Get("Content-Disposition")
+	if contentDisposition == "" {
+		t.Error("expected Content-Disposition header to be set")
+	}
+
+	// Verify response body is not empty (contains PNG data)
+	if rr.Body.Len() == 0 {
+		t.Error("expected response body to contain PNG data")
+	}
+
+	// Verify PNG magic bytes (first 8 bytes of PNG file)
+	pngMagic := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
+	bodyBytes := rr.Body.Bytes()
+	if len(bodyBytes) < 8 {
+		t.Errorf("response body too short to be a valid PNG")
+	} else {
+		for i := 0; i < 8; i++ {
+			if bodyBytes[i] != pngMagic[i] {
+				t.Errorf("invalid PNG magic bytes at position %d: expected %x, got %x", i, pngMagic[i], bodyBytes[i])
+				break
+			}
+		}
+	}
+}
+
+func TestMarkerHandler_GenerateQR_NotFound(t *testing.T) {
+	cleanupMarkers(t)
+	cleanupUsers(t)
+
+	userID := createTestUserForMarker(t)
+
+	handler := NewMarkerHandler(testQueries, nil, "https://test.bamboomapper.com")
+
+	randomID := uuid.New()
+
+	r := chi.NewRouter()
+	r.Get("/markers/{id}/qr", handler.GenerateQR)
+
+	req := httptest.NewRequest(http.MethodGet, "/markers/"+randomID.String()+"/qr", nil)
+	req = addClaimsToContext(req, userID)
+
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusNotFound {
+		t.Errorf("expected status %d, got %d: %s", http.StatusNotFound, rr.Code, rr.Body.String())
+	}
+
+	var response Response
+	json.Unmarshal(rr.Body.Bytes(), &response)
+
+	if response.Meta.Success {
+		t.Error("expected success=false")
+	}
+
+	if response.Meta.Message != "Marker not found" {
+		t.Errorf("unexpected message: %s", response.Meta.Message)
+	}
+}
+
+func TestMarkerHandler_GenerateQR_Unauthorized(t *testing.T) {
+	cleanupMarkers(t)
+	cleanupUsers(t)
+
+	userID := createTestUserForMarker(t)
+	markerID := createTestMarker(t, userID)
+
+	handler := NewMarkerHandler(testQueries, nil, "https://test.bamboomapper.com")
+
+	r := chi.NewRouter()
+	r.Get("/markers/{id}/qr", handler.GenerateQR)
+
+	req := httptest.NewRequest(http.MethodGet, "/markers/"+markerID.String()+"/qr", nil)
+	// Note: NOT adding claims to context
+
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Errorf("expected status %d, got %d: %s", http.StatusUnauthorized, rr.Code, rr.Body.String())
+	}
+}
+
+func TestMarkerHandler_GenerateQR_InvalidID(t *testing.T) {
+	cleanupMarkers(t)
+	cleanupUsers(t)
+
+	userID := createTestUserForMarker(t)
+
+	handler := NewMarkerHandler(testQueries, nil, "https://test.bamboomapper.com")
+
+	r := chi.NewRouter()
+	r.Get("/markers/{id}/qr", handler.GenerateQR)
+
+	req := httptest.NewRequest(http.MethodGet, "/markers/invalid-uuid/qr", nil)
+	req = addClaimsToContext(req, userID)
+
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("expected status %d, got %d: %s", http.StatusBadRequest, rr.Code, rr.Body.String())
+	}
+
+	var response Response
+	json.Unmarshal(rr.Body.Bytes(), &response)
+
+	if response.Meta.Success {
+		t.Error("expected success=false")
+	}
+
+	if response.Meta.Message != "Invalid marker ID" {
+		t.Errorf("unexpected message: %s", response.Meta.Message)
+	}
+}
+
+func TestMarkerHandler_GetByShortCode_Public(t *testing.T) {
+	cleanupMarkers(t)
+	cleanupUsers(t)
+
+	userID := createTestUserForMarker(t)
+	createTestMarker(t, userID)
+
+	handler := NewMarkerHandler(testQueries, nil, "https://test.bamboomapper.com")
+
+	r := chi.NewRouter()
+	r.Get("/markers/code/{shortCode}", handler.GetByShortCode)
+
+	// Request WITHOUT auth context - should still work since it's public
+	req := httptest.NewRequest(http.MethodGet, "/markers/code/TEST001", nil)
+
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected status %d, got %d: %s", http.StatusOK, rr.Code, rr.Body.String())
+	}
+
+	var response Response
+	if err := json.Unmarshal(rr.Body.Bytes(), &response); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+
+	if !response.Meta.Success {
+		t.Error("expected success=true for public endpoint")
 	}
 }
