@@ -15,6 +15,7 @@ type Config struct {
 	GDriveCredentialsPath string
 	GDriveTokenPath       string
 	GDriveFolderID        string
+	DeepLinkBaseURL       string
 }
 
 func Load() *Config {
@@ -40,6 +41,7 @@ func Load() *Config {
 		GDriveCredentialsPath: getEnv("GDRIVE_CREDENTIALS_PATH", ""),
 		GDriveTokenPath:       getEnv("GDRIVE_TOKEN_PATH", ""),
 		GDriveFolderID:        getEnv("GDRIVE_FOLDER_ID", ""),
+		DeepLinkBaseURL:       getEnv("DEEP_LINK_BASE_URL", "https://bamboomapper.com"),
 	}
 }
 
