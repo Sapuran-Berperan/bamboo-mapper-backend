@@ -626,13 +626,15 @@ func (h *MarkerHandler) GenerateQR(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Write QR code to buffer (PNG format)
+	// Write QR code to buffer (PNG format with logo)
 	buf := &bytes.Buffer{}
-	wr := standard.NewWithWriter(
-		nopCloser{buf},
+	writerOpts := []standard.ImageOption{
 		standard.WithQRWidth(10),
 		standard.WithBuiltinImageEncoder(standard.PNG_FORMAT),
-	)
+		standard.WithLogoImageFilePNG("assets/logo_sapuran.png"),
+		standard.WithLogoSizeMultiplier(3),
+	}
+	wr := standard.NewWithWriter(nopCloser{buf}, writerOpts...)
 	if err := qrc.Save(wr); err != nil {
 		log.Printf("Failed to save QR code: %v", err)
 		respondError(w, http.StatusInternalServerError, "Failed to generate QR code", nil)
