@@ -118,6 +118,7 @@ func main() {
 			r.Group(func(r chi.Router) {
 				r.Use(appMiddleware.JWTAuth(jwtManager))
 				r.Get("/", markerHandler.List)
+				r.Get("/paginated", markerHandler.ListPaginated)
 				r.Post("/", markerHandler.Create)
 				r.Get("/{id}", markerHandler.GetByID)
 				r.Get("/{id}/qr", markerHandler.GenerateQR)

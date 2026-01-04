@@ -61,6 +61,75 @@ func (h *MarkerHandler) List(w http.ResponseWriter, r *http.Request) {
 	respondSuccess(w, http.StatusOK, "Markers retrieved successfully", response)
 }
 
+// ListPaginated returns markers with pagination, sorting, search, and filters for dashboard
+func (h *MarkerHandler) ListPaginated(w http.ResponseWriter, r *http.Request) {
+	// Parse query parameters
+	params, err := ParseListMarkersParams(r)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid query parameters", nil)
+		return
+	}
+
+	// Fetch paginated markers
+	result, err := h.queries.ListMarkersPaginated(r.Context(), params)
+	if err != nil {
+		log.Printf("Failed to fetch paginated markers: %v", err)
+		respondError(w, http.StatusInternalServerError, "Failed to fetch markers", nil)
+		return
+	}
+
+	// Convert to response models
+	response := make([]model.MarkerResponse, len(result.Markers))
+	for i, m := range result.Markers {
+		response[i] = markerToResponse(m)
+	}
+
+	// Calculate pagination metadata
+	pagination := model.PaginationMeta{
+		CurrentPage: params.Page,
+		PerPage:     params.PerPage,
+		TotalItems:  result.TotalCount,
+		TotalPages:  CalculateTotalPages(result.TotalCount, params.PerPage),
+	}
+
+	respondPaginated(w, http.StatusOK, "Markers retrieved successfully", response, pagination)
+}
+
+// markerToResponse converts a repository.Marker to model.MarkerResponse
+func markerToResponse(m repository.Marker) model.MarkerResponse {
+	response := model.MarkerResponse{
+		ID:        m.ID,
+		ShortCode: m.ShortCode,
+		CreatorID: m.CreatorID,
+		Name:      m.Name,
+		Latitude:  m.Latitude,
+		Longitude: m.Longitude,
+		CreatedAt: m.CreatedAt.Time,
+		UpdatedAt: m.UpdatedAt.Time,
+	}
+
+	if m.Description.Valid {
+		response.Description = &m.Description.String
+	}
+	if m.Strain.Valid {
+		response.Strain = &m.Strain.String
+	}
+	if m.Quantity.Valid {
+		response.Quantity = &m.Quantity.Int32
+	}
+	if m.ImageUrl.Valid {
+		response.ImageURL = &m.ImageUrl.String
+	}
+	if m.OwnerName.Valid {
+		response.OwnerName = &m.OwnerName.String
+	}
+	if m.OwnerContact.Valid {
+		response.OwnerContact = &m.OwnerContact.String
+	}
+
+	return response
+}
+
 // GetByID returns full marker details by ID
 func (h *MarkerHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 	idParam := chi.URLParam(r, "id")

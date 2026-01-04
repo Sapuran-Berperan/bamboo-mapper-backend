@@ -1096,3 +1096,410 @@ func TestMarkerHandler_GetByShortCode_Public(t *testing.T) {
 		t.Error("expected success=true for public endpoint")
 	}
 }
+
+// createMultipleTestMarkers creates multiple markers for pagination testing
+func createMultipleTestMarkers(t *testing.T, creatorID uuid.UUID, count int) []uuid.UUID {
+	var ids []uuid.UUID
+	for i := 0; i < count; i++ {
+		var markerID uuid.UUID
+		shortCode := "TST" + string(rune('A'+i)) + "001"
+		name := "Test Bamboo " + string(rune('A'+i))
+		strain := "Strain " + string(rune('A'+i))
+		err := testDB.QueryRow(`
+			INSERT INTO markers (creator_id, short_code, name, latitude, longitude, description, strain, quantity)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+			RETURNING id
+		`, creatorID, shortCode, name, "-7.12345678", "110.12345678", "Description "+string(rune('A'+i)), strain, 10+i).Scan(&markerID)
+		if err != nil {
+			t.Fatalf("failed to create test marker %d: %v", i, err)
+		}
+		ids = append(ids, markerID)
+	}
+	return ids
+}
+
+func TestMarkerHandler_ListPaginated_DefaultParams(t *testing.T) {
+	cleanupMarkers(t)
+	cleanupUsers(t)
+
+	userID := createTestUserForMarker(t)
+	createMultipleTestMarkers(t, userID, 15)
+
+	handler := NewMarkerHandler(testQueries, nil, "https://test.bamboomapper.com")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/markers/paginated", nil)
+	rr := httptest.NewRecorder()
+
+	handler.ListPaginated(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected status %d, got %d: %s", http.StatusOK, rr.Code, rr.Body.String())
+	}
+
+	var response PaginatedResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &response); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+
+	if !response.Meta.Success {
+		t.Error("expected success=true")
+	}
+
+	// Check pagination metadata
+	if response.Meta.Pagination == nil {
+		t.Fatal("expected pagination metadata to be present")
+	}
+
+	if response.Meta.Pagination.CurrentPage != 1 {
+		t.Errorf("expected current_page=1, got %d", response.Meta.Pagination.CurrentPage)
+	}
+
+	if response.Meta.Pagination.PerPage != 10 {
+		t.Errorf("expected per_page=10, got %d", response.Meta.Pagination.PerPage)
+	}
+
+	if response.Meta.Pagination.TotalItems != 15 {
+		t.Errorf("expected total_items=15, got %d", response.Meta.Pagination.TotalItems)
+	}
+
+	if response.Meta.Pagination.TotalPages != 2 {
+		t.Errorf("expected total_pages=2, got %d", response.Meta.Pagination.TotalPages)
+	}
+
+	// Check data length (should be 10 for first page of 15 items)
+	data, ok := response.Data.([]interface{})
+	if !ok {
+		t.Fatalf("expected data to be an array, got %T", response.Data)
+	}
+
+	if len(data) != 10 {
+		t.Errorf("expected 10 markers on first page, got %d", len(data))
+	}
+}
+
+func TestMarkerHandler_ListPaginated_CustomPagination(t *testing.T) {
+	cleanupMarkers(t)
+	cleanupUsers(t)
+
+	userID := createTestUserForMarker(t)
+	createMultipleTestMarkers(t, userID, 25)
+
+	handler := NewMarkerHandler(testQueries, nil, "https://test.bamboomapper.com")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/markers/paginated?page=2&per_page=5", nil)
+	rr := httptest.NewRecorder()
+
+	handler.ListPaginated(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected status %d, got %d: %s", http.StatusOK, rr.Code, rr.Body.String())
+	}
+
+	var response PaginatedResponse
+	json.Unmarshal(rr.Body.Bytes(), &response)
+
+	if response.Meta.Pagination.CurrentPage != 2 {
+		t.Errorf("expected current_page=2, got %d", response.Meta.Pagination.CurrentPage)
+	}
+
+	if response.Meta.Pagination.PerPage != 5 {
+		t.Errorf("expected per_page=5, got %d", response.Meta.Pagination.PerPage)
+	}
+
+	if response.Meta.Pagination.TotalPages != 5 {
+		t.Errorf("expected total_pages=5, got %d", response.Meta.Pagination.TotalPages)
+	}
+
+	data := response.Data.([]interface{})
+	if len(data) != 5 {
+		t.Errorf("expected 5 markers on page 2, got %d", len(data))
+	}
+}
+
+func TestMarkerHandler_ListPaginated_Search(t *testing.T) {
+	cleanupMarkers(t)
+	cleanupUsers(t)
+
+	userID := createTestUserForMarker(t)
+	createMultipleTestMarkers(t, userID, 10)
+
+	handler := NewMarkerHandler(testQueries, nil, "https://test.bamboomapper.com")
+
+	// Search for "Bamboo A" - should match "Test Bamboo A"
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/markers/paginated?search=Bamboo%20A", nil)
+	rr := httptest.NewRecorder()
+
+	handler.ListPaginated(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected status %d, got %d: %s", http.StatusOK, rr.Code, rr.Body.String())
+	}
+
+	var response PaginatedResponse
+	json.Unmarshal(rr.Body.Bytes(), &response)
+
+	if response.Meta.Pagination.TotalItems != 1 {
+		t.Errorf("expected 1 matching marker, got %d", response.Meta.Pagination.TotalItems)
+	}
+
+	data := response.Data.([]interface{})
+	if len(data) != 1 {
+		t.Errorf("expected 1 marker in results, got %d", len(data))
+	}
+
+	marker := data[0].(map[string]interface{})
+	if marker["name"] != "Test Bamboo A" {
+		t.Errorf("expected name 'Test Bamboo A', got %v", marker["name"])
+	}
+}
+
+func TestMarkerHandler_ListPaginated_SearchNoResults(t *testing.T) {
+	cleanupMarkers(t)
+	cleanupUsers(t)
+
+	userID := createTestUserForMarker(t)
+	createMultipleTestMarkers(t, userID, 5)
+
+	handler := NewMarkerHandler(testQueries, nil, "https://test.bamboomapper.com")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/markers/paginated?search=nonexistent", nil)
+	rr := httptest.NewRecorder()
+
+	handler.ListPaginated(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected status %d, got %d: %s", http.StatusOK, rr.Code, rr.Body.String())
+	}
+
+	var response PaginatedResponse
+	json.Unmarshal(rr.Body.Bytes(), &response)
+
+	if response.Meta.Pagination.TotalItems != 0 {
+		t.Errorf("expected 0 matching markers, got %d", response.Meta.Pagination.TotalItems)
+	}
+
+	if response.Meta.Pagination.TotalPages != 0 {
+		t.Errorf("expected 0 total pages, got %d", response.Meta.Pagination.TotalPages)
+	}
+
+	data := response.Data.([]interface{})
+	if len(data) != 0 {
+		t.Errorf("expected 0 markers in results, got %d", len(data))
+	}
+}
+
+func TestMarkerHandler_ListPaginated_SortByName(t *testing.T) {
+	cleanupMarkers(t)
+	cleanupUsers(t)
+
+	userID := createTestUserForMarker(t)
+	createMultipleTestMarkers(t, userID, 5)
+
+	handler := NewMarkerHandler(testQueries, nil, "https://test.bamboomapper.com")
+
+	// Sort by name ascending
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/markers/paginated?sort_by=name&sort_dir=asc", nil)
+	rr := httptest.NewRecorder()
+
+	handler.ListPaginated(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected status %d, got %d: %s", http.StatusOK, rr.Code, rr.Body.String())
+	}
+
+	var response PaginatedResponse
+	json.Unmarshal(rr.Body.Bytes(), &response)
+
+	data := response.Data.([]interface{})
+	if len(data) < 2 {
+		t.Fatal("expected at least 2 markers for sort test")
+	}
+
+	// First marker should be "Test Bamboo A" (alphabetically first)
+	firstMarker := data[0].(map[string]interface{})
+	if firstMarker["name"] != "Test Bamboo A" {
+		t.Errorf("expected first marker to be 'Test Bamboo A', got %v", firstMarker["name"])
+	}
+}
+
+func TestMarkerHandler_ListPaginated_FilterByCreatorID(t *testing.T) {
+	cleanupMarkers(t)
+	cleanupUsers(t)
+
+	// Create two users
+	userID1 := createTestUserForMarker(t)
+
+	var userID2 uuid.UUID
+	err := testDB.QueryRow(`
+		INSERT INTO users (email, password_hash, name, role)
+		VALUES ($1, $2, $3, $4)
+		RETURNING id
+	`, "markertest2@example.com", "$2a$12$test", "Marker Test User 2", "user").Scan(&userID2)
+	if err != nil {
+		t.Fatalf("failed to create second test user: %v", err)
+	}
+
+	// Create markers for both users
+	createMultipleTestMarkers(t, userID1, 3)
+
+	// Create markers for user 2 with different short codes
+	for i := 0; i < 2; i++ {
+		shortCode := "USR2" + string(rune('A'+i))
+		_, err := testDB.Exec(`
+			INSERT INTO markers (creator_id, short_code, name, latitude, longitude)
+			VALUES ($1, $2, $3, $4, $5)
+		`, userID2, shortCode, "User2 Marker "+string(rune('A'+i)), "-7.0", "110.0")
+		if err != nil {
+			t.Fatalf("failed to create marker for user 2: %v", err)
+		}
+	}
+
+	handler := NewMarkerHandler(testQueries, nil, "https://test.bamboomapper.com")
+
+	// Filter by user 1's creator_id
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/markers/paginated?creator_id="+userID1.String(), nil)
+	rr := httptest.NewRecorder()
+
+	handler.ListPaginated(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected status %d, got %d: %s", http.StatusOK, rr.Code, rr.Body.String())
+	}
+
+	var response PaginatedResponse
+	json.Unmarshal(rr.Body.Bytes(), &response)
+
+	if response.Meta.Pagination.TotalItems != 3 {
+		t.Errorf("expected 3 markers for user 1, got %d", response.Meta.Pagination.TotalItems)
+	}
+}
+
+func TestMarkerHandler_ListPaginated_InvalidSortField(t *testing.T) {
+	cleanupMarkers(t)
+	cleanupUsers(t)
+
+	userID := createTestUserForMarker(t)
+	createTestMarker(t, userID)
+
+	handler := NewMarkerHandler(testQueries, nil, "https://test.bamboomapper.com")
+
+	// Invalid sort field should fall back to created_at
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/markers/paginated?sort_by=invalid_field", nil)
+	rr := httptest.NewRecorder()
+
+	handler.ListPaginated(rr, req)
+
+	// Should still succeed (falls back to default)
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected status %d, got %d: %s", http.StatusOK, rr.Code, rr.Body.String())
+	}
+}
+
+func TestMarkerHandler_ListPaginated_PerPageMaxLimit(t *testing.T) {
+	cleanupMarkers(t)
+	cleanupUsers(t)
+
+	userID := createTestUserForMarker(t)
+	createTestMarker(t, userID)
+
+	handler := NewMarkerHandler(testQueries, nil, "https://test.bamboomapper.com")
+
+	// Request more than max (100) - should be capped
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/markers/paginated?per_page=500", nil)
+	rr := httptest.NewRecorder()
+
+	handler.ListPaginated(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected status %d, got %d: %s", http.StatusOK, rr.Code, rr.Body.String())
+	}
+
+	var response PaginatedResponse
+	json.Unmarshal(rr.Body.Bytes(), &response)
+
+	// per_page should be capped at 100
+	if response.Meta.Pagination.PerPage != 100 {
+		t.Errorf("expected per_page to be capped at 100, got %d", response.Meta.Pagination.PerPage)
+	}
+}
+
+func TestMarkerHandler_ListPaginated_FullMarkerData(t *testing.T) {
+	cleanupMarkers(t)
+	cleanupUsers(t)
+
+	userID := createTestUserForMarker(t)
+	createTestMarker(t, userID)
+
+	handler := NewMarkerHandler(testQueries, nil, "https://test.bamboomapper.com")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/markers/paginated", nil)
+	rr := httptest.NewRecorder()
+
+	handler.ListPaginated(rr, req)
+
+	var response PaginatedResponse
+	json.Unmarshal(rr.Body.Bytes(), &response)
+
+	data := response.Data.([]interface{})
+	marker := data[0].(map[string]interface{})
+
+	// Should have ALL fields (unlike lightweight List endpoint)
+	expectedFields := []string{
+		"id", "short_code", "name", "latitude", "longitude",
+		"description", "strain", "quantity", "creator_id",
+		"created_at", "updated_at",
+	}
+
+	for _, field := range expectedFields {
+		if _, exists := marker[field]; !exists {
+			t.Errorf("expected field %s to exist in paginated response", field)
+		}
+	}
+
+	// Verify specific values
+	if marker["name"] != "Test Bamboo" {
+		t.Errorf("expected name 'Test Bamboo', got %v", marker["name"])
+	}
+	if marker["description"] != "Test description" {
+		t.Errorf("expected description 'Test description', got %v", marker["description"])
+	}
+	if marker["strain"] != "Bambusa vulgaris" {
+		t.Errorf("expected strain 'Bambusa vulgaris', got %v", marker["strain"])
+	}
+}
+
+func TestMarkerHandler_ListPaginated_Empty(t *testing.T) {
+	cleanupMarkers(t)
+	cleanupUsers(t)
+
+	handler := NewMarkerHandler(testQueries, nil, "https://test.bamboomapper.com")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/markers/paginated", nil)
+	rr := httptest.NewRecorder()
+
+	handler.ListPaginated(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected status %d, got %d: %s", http.StatusOK, rr.Code, rr.Body.String())
+	}
+
+	var response PaginatedResponse
+	json.Unmarshal(rr.Body.Bytes(), &response)
+
+	if !response.Meta.Success {
+		t.Error("expected success=true")
+	}
+
+	if response.Meta.Pagination.TotalItems != 0 {
+		t.Errorf("expected total_items=0, got %d", response.Meta.Pagination.TotalItems)
+	}
+
+	if response.Meta.Pagination.TotalPages != 0 {
+		t.Errorf("expected total_pages=0, got %d", response.Meta.Pagination.TotalPages)
+	}
+
+	data := response.Data.([]interface{})
+	if len(data) != 0 {
+		t.Errorf("expected 0 markers, got %d", len(data))
+	}
+}
