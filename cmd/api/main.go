@@ -94,7 +94,7 @@ func main() {
 	})
 
 	// API routes
-	r.Route("/api/v1", func(r chi.Router) {
+	r.Route("/v1", func(r chi.Router) {
 		r.Route("/auth", func(r chi.Router) {
 			// Public routes
 			r.Post("/register", authHandler.Register)
