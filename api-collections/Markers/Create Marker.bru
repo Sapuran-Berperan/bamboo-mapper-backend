@@ -1,0 +1,37 @@
+meta {
+  name: Create Marker
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{URL}}/markers
+  body: multipartForm
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{Access_Token}}
+}
+
+body:form-urlencoded {
+  name: testing
+  : 
+}
+
+body:multipart-form {
+  name: testing
+  latitude: -7.424508968442346
+  longitude: 110.01069970060138
+  image: @file()
+  description: 
+  strain: 
+  quantity: 
+  owner_name: 
+  owner_contact: 
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

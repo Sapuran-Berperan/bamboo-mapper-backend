@@ -1,0 +1,20 @@
+meta {
+  name: Current User
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{URL}}/auth/me
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{Access_Token}}
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

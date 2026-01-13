@@ -1,0 +1,20 @@
+meta {
+  name: Marker Detailed by Short Code
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{URL}}/markers/code/:shortCode
+  body: none
+  auth: inherit
+}
+
+params:path {
+  shortCode: 
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

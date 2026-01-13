@@ -1,0 +1,20 @@
+meta {
+  name: List Markers
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{URL}}/markers
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{Access_Token}}
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

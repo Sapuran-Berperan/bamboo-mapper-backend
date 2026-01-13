@@ -1,0 +1,24 @@
+meta {
+  name: Marker Detailed
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{URL}}/markers/:id
+  body: none
+  auth: bearer
+}
+
+params:path {
+  id: 
+}
+
+auth:bearer {
+  token: {{Access_Token}}
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}
