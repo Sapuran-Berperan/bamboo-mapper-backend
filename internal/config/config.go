@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strings"
 	"time"
 )
 
@@ -16,6 +17,7 @@ type Config struct {
 	GDriveTokenPath       string
 	GDriveFolderID        string
 	DeepLinkBaseURL       string
+	CORSAllowedOrigins    []string
 }
 
 func Load() *Config {
@@ -31,6 +33,9 @@ func Load() *Config {
 	accessExpiry := parseDuration(getEnv("ACCESS_TOKEN_EXPIRY", "15m"), 15*time.Minute)
 	refreshExpiry := parseDuration(getEnv("REFRESH_TOKEN_EXPIRY", "168h"), 7*24*time.Hour)
 
+	// Parse CORS allowed origins
+	corsOrigins := parseCORSOrigins(getEnv("CORS_ALLOWED_ORIGINS", "*"))
+
 	return &Config{
 		Environment:           env,
 		Port:                  getEnv("PORT", "8080"),
@@ -42,6 +47,7 @@ func Load() *Config {
 		GDriveTokenPath:       getEnv("GDRIVE_TOKEN_PATH", ""),
 		GDriveFolderID:        getEnv("GDRIVE_FOLDER_ID", ""),
 		DeepLinkBaseURL:       getEnv("DEEP_LINK_BASE_URL", "https://bamboomapper.com"),
+		CORSAllowedOrigins:    corsOrigins,
 	}
 }
 
@@ -58,4 +64,28 @@ func parseDuration(s string, defaultValue time.Duration) time.Duration {
 		return defaultValue
 	}
 	return d
+}
+
+func parseCORSOrigins(s string) []string {
+	// If empty or just "*", return wildcard
+	if s == "" || s == "*" {
+		return []string{"*"}
+	}
+
+	// Split by comma and trim spaces
+	origins := strings.Split(s, ",")
+	result := make([]string, 0, len(origins))
+	for _, origin := range origins {
+		trimmed := strings.TrimSpace(origin)
+		if trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+
+	// If no valid origins found, default to wildcard
+	if len(result) == 0 {
+		return []string{"*"}
+	}
+
+	return result
 }
