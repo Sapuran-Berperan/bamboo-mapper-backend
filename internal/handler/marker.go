@@ -5,10 +5,13 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"strconv"
+	"time"
 
+	"github.com/Sapuran-Berperan/bamboo-mapper-backend/internal/imaging"
 	"github.com/Sapuran-Berperan/bamboo-mapper-backend/internal/middleware"
 	"github.com/Sapuran-Berperan/bamboo-mapper-backend/internal/model"
 	"github.com/Sapuran-Berperan/bamboo-mapper-backend/internal/repository"
@@ -297,17 +300,36 @@ func (h *MarkerHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	// Handle image upload (optional)
 	var imageURL sql.NullString
-	file, header, err := r.FormFile("image")
+	file, _, err := r.FormFile("image")
 	if err == nil {
 		defer file.Close()
 
 		// Upload to Google Drive with short_code as filename
 		if h.gdrive != nil {
-			// Get file extension from original filename
-			ext := getFileExtension(header.Filename)
-			filename := shortCode + ext
+			// Read file bytes
+			fileBytes, readErr := io.ReadAll(file)
+			if readErr != nil {
+				log.Printf("Failed to read uploaded file: %v", readErr)
+				respondError(w, http.StatusBadRequest, "Failed to read uploaded file", nil)
+				return
+			}
 
-			url, uploadErr := h.gdrive.UploadFile(file, filename, header.Header.Get("Content-Type"))
+			// Process image (watermark + EXIF)
+			processedBytes, processErr := imaging.ProcessImage(fileBytes, imaging.ProcessOptions{
+				Name:      req.Name,
+				Latitude:  req.Latitude,
+				Longitude: req.Longitude,
+				Timestamp: time.Now(),
+			})
+			if processErr != nil {
+				log.Printf("Image processing failed: %v", processErr)
+				// Graceful degradation - use original bytes
+				processedBytes = fileBytes
+			}
+
+			// Upload processed image to Google Drive (always as .jpg)
+			filename := shortCode + ".jpg"
+			url, uploadErr := h.gdrive.UploadFile(bytes.NewReader(processedBytes), filename, "image/jpeg")
 			if uploadErr != nil {
 				log.Printf("Failed to upload image to Google Drive: %v", uploadErr)
 				respondError(w, http.StatusInternalServerError, "Failed to upload image", nil)
@@ -385,16 +407,6 @@ func toNullInt32(i *int32) sql.NullInt32 {
 		return sql.NullInt32{Valid: false}
 	}
 	return sql.NullInt32{Int32: *i, Valid: true}
-}
-
-// getFileExtension extracts the file extension from a filename (e.g., ".jpg")
-func getFileExtension(filename string) string {
-	for i := len(filename) - 1; i >= 0; i-- {
-		if filename[i] == '.' {
-			return filename[i:]
-		}
-	}
-	return ""
 }
 
 // extractGDriveFileID extracts the file ID from a Google Drive URL
@@ -526,7 +538,7 @@ func (h *MarkerHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Handle image upload (optional)
-	file, header, err := r.FormFile("image")
+	file, _, err := r.FormFile("image")
 	if err == nil {
 		defer file.Close()
 
@@ -542,11 +554,30 @@ func (h *MarkerHandler) Update(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
-			// Upload new image with short_code as filename
-			ext := getFileExtension(header.Filename)
-			filename := existingMarker.ShortCode + ext
+			// Read file bytes
+			fileBytes, readErr := io.ReadAll(file)
+			if readErr != nil {
+				log.Printf("Failed to read uploaded file: %v", readErr)
+				respondError(w, http.StatusBadRequest, "Failed to read uploaded file", nil)
+				return
+			}
 
-			url, uploadErr := h.gdrive.UploadFile(file, filename, header.Header.Get("Content-Type"))
+			// Process image (watermark + EXIF) using updated marker data
+			processedBytes, processErr := imaging.ProcessImage(fileBytes, imaging.ProcessOptions{
+				Name:      updateParams.Name,
+				Latitude:  updateParams.Latitude,
+				Longitude: updateParams.Longitude,
+				Timestamp: time.Now(),
+			})
+			if processErr != nil {
+				log.Printf("Image processing failed: %v", processErr)
+				// Graceful degradation - use original bytes
+				processedBytes = fileBytes
+			}
+
+			// Upload processed image to Google Drive (always as .jpg)
+			filename := existingMarker.ShortCode + ".jpg"
+			url, uploadErr := h.gdrive.UploadFile(bytes.NewReader(processedBytes), filename, "image/jpeg")
 			if uploadErr != nil {
 				log.Printf("Failed to upload image to Google Drive: %v", uploadErr)
 				respondError(w, http.StatusInternalServerError, "Failed to upload image", nil)
